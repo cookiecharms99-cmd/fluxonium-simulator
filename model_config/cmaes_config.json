@@ -1,0 +1,19 @@
+{
+    "basis_tag": "sine",
+    "iters": 50,
+    "popsize": 0,
+    "sigma0": 0.3,
+    "seed": 0,
+    "clip_coeff": 0.0,
+    "coeff_bound": 0.0,
+    "workers": 4,
+    "out_dir": "data//cmaes//",
+    "target": 0.999,
+    "patience": 50,
+    "min_improve": 1e-06,
+    "sigma_min": 0.004,
+    "std_min": 2e-5,
+    "mean_gap": 5e-5,
+    "conv_patience": 10,
+    "conv_cnt": 0
+}

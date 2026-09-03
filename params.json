@@ -1,0 +1,27 @@
+
+
+{
+    "EJ": 4.164,
+    "EC": 1.531,
+    "EL" : 0.685,
+    "cutoff": 20,
+    "n_pulse": 40,
+    "n_drive": 20,
+    "flux1": 0.25,
+    "flux2": 0.5,
+    "Omega": 0.213,
+    "omega_q":  2.89652896,
+    "omega_ef": 1.78991881,
+    "omega_r": 6.5172172187,
+    "n_ef": 0.304437775,
+    "n_gf": 0.374859134,
+    "g": 0.46932079985285463, 
+    "T" : 150.0,
+    "num_t_steps": 500,
+    "A_max": null,
+    "qutip_nsteps": 2e4,
+    "qutip_atol": 1e-8,
+    "qutip_rtol": 1e-6,
+    "qutip_method": null
+
+}

@@ -1,0 +1,20 @@
+# ignore the environments! 
+
+spookyvenv/
+venv/
+.venv/
+# ignore python cache stuff
+
+__pycache__/
+*.__pyc
+
+.cache/
+# Ignore data results for now
+
+*.npy
+*.csv
+
+
+
+jobs_to_send/logs/
+

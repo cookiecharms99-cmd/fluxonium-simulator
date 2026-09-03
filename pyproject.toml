@@ -1,0 +1,18 @@
+[project]
+name = "quantum-project-yay"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cma>=4.4.4",
+    "colorama>=0.4.6",
+    "matplotlib>=3.11.0",
+    "multiprocess>=0.70.19",
+    "numpy>=2.5.0",
+    "pathos>=0.3.5",
+    "qutip>=5.3.0",
+    "scipy>=1.18.0",
+    "scqubits>=4.1.0",
+    "sympy>=1.14.0",
+]
