@@ -17,9 +17,9 @@ Hi welcome to my project!
 # Project Core
 
 
-Goal: Optimize fluxonium qubit initialization protocol!
+Goal: Optimize Fluxonium qubit initialization protocol!
 
-In the protocol, a fluxonium qubit exists in a mixed state! A current pulse and a variation of flux from $pi$ away and back to $pi$ achieves this and the question is on how to optimize these curves to achieve some fidelity goal (not locked for now) in minimal time! 
+In the protocol, a Fluxonium qubit exists in a mixed state! A current pulse and a variation of flux from $\pi$ away and back to $\pi$ achieves this and the question is on how to optimize these curves to achieve some fidelity goal (not locked for now) in minimal time! 
 
 The relevant Hamiltonian equation is:
 

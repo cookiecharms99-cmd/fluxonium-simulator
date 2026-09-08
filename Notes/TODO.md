@@ -7,6 +7,18 @@ The goal is not to rebuild everything at once. Each session should finish one sm
 - [x] Read `README.md`, `plans.md`, and `progress.md` (you already did the hardest part: coming back).
 - [x] Set up the Python environment with the dependencies in `pyproject.toml`.v
 - [x] Run a tiny simulator smoke test: construct `FluxoniumSimulator` from `params.json` and evaluate one random or zero-weight pulse.
+
+## temporary cleanup mission!
+
+- [] test physics! Analyze one sample as it evolves. Make sure to understand it lol
+- [] think about what setup works best for the initial state! 
+
+- [] refactor `simulator.py` -> separation of concerns between setup and simulation
+- [] read more carefully :D
+- [] 
+
+
+
 - [ ] Reread simulator.py. Actually implement gaussian basis. 
 - [ ] Ensure everything matches up with our notes. Iterate over suggestions. 
 - [ ] Record the result and runtime in `progress.md`.
