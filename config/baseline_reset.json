@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "units": {
+    "flux": "phi0_frac",
+    "phase": "radians",
+    "time": "ns",
+    "frequency": "radians?"
+  },
+  "fluxonium": {
+    "EJ": 4.164,
+    "EC": 1.531,
+    "EL": 0.685
+  },
+  "cavity": {
+    "frequency": 6.5172172187,
+    "coupling": 0.46932079985285463
+  },
+  "measured transitions": {
+    "freq_ef": 1.78991881,
+    "n_ef": 0.304437775,
+    "n_gf": 0.374859134
+  },
+  "protocol": {
+    "bias": {
+      "idle_flux_frac": 0.5,
+      "interaction_flux_frac": 0.25
+    },
+    "initial_state": {
+      "pop_ground": 0.5,
+      "pop_excited": 0.5
+    },
+    "controls": {
+      "duration_ns": 150.0,
+      "flux": {
+        "basis_N": 40
+      },
+      "charge_drive": {
+        "basis_N": 20,
+        "amplitude": 0.213
+      }
+    }
+  },
+  "numerics": {
+    "fluxonium_cutoff": 20,
+    "time_steps": 500,
+    "qutip": {
+      "nsteps": 20000,
+      "atol": 1e-8,
+      "rtol": 1e-6,
+      "method": null
+    }
+  }
+}

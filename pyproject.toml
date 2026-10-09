@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cma>=4.4.4",
     "colorama>=0.4.6",
+    "ipykernel>=7.3.0",
     "matplotlib>=3.11.0",
     "multiprocess>=0.70.19",
     "numpy>=2.5.0",
@@ -15,4 +16,9 @@ dependencies = [
     "scipy>=1.18.0",
     "scqubits>=4.1.0",
     "sympy>=1.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "marimo>=0.24.2",
 ]

@@ -1,20 +1,36 @@
-# ignore the environments! 
+# ignore the environments!
 
 spookyvenv/
 venv/
 .venv/
-# ignore python cache stuff
 
+# ignore python cache stuff
 __pycache__/
 *.__pyc
-
+*.pyc
 .cache/
-# Ignore data results for now
 
+
+# Ignore data results for now
 *.npy
 *.csv
 
+# Generated plots
+*.png
+*.jpg
+*.jpeg
+*.svg
 
-
+Notes/
 jobs_to_send/logs/
 
+References/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Generated editor files (if not needed in Git)
+playzone/__marimo__/
+
+# Generated simulation outputs
+output/
