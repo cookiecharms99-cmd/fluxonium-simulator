@@ -257,7 +257,7 @@ def _(
             evals_count=6
         )  # get the actual states :3
 
-    
+
 
         n_op_iter = np.asarray(flx.n_operator(energy_esys=False))
         H_total = (
@@ -556,7 +556,7 @@ def _(P_f0_res_decay, P_g0_res_decay, P_g1_res_decay, plt, t_arr_res):
 
     # Pastel line colors
     color_f0 = "#f38ba8"  # Soft pink
-    color_g0 = "#89b4fa"  # Soft blue (for the rising g0)
+    color_g0 = "#89b4fa"  # Soft blue (for the risingg0)
     color_g1 = "#a6e3a1"  # Soft mint green
 
     # Set up the figure with the custom background
@@ -636,7 +636,7 @@ def _(
     sigma_y,
     test_cutoff,
 ):
-    non_resonance = 0.3
+    non_resonance = 0.5
     non_res_flux = Fluxonium(
         EJ=EJ, EC=EC, EL=EL, cutoff=test_cutoff, flux=non_resonance
     )

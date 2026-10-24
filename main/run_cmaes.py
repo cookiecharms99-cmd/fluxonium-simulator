@@ -1,0 +1,255 @@
+"""Run a small, reproducible CMA-ES campaign with the project simulator."""
+
+from __future__ import annotations
+
+import os
+
+# One numerical thread per process avoids oversubscribing the allocated CPUs.
+# These settings must be applied before importing NumPy/SciPy/QuTiP.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+# Import stuff! -------------
+import argparse
+import copy
+import json
+import signal
+import sys
+from pathlib import Path
+from time import perf_counter
+
+import numpy as np
+
+# ----------------------------------------
+
+# Import project stuff! -------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from source.optimization.cmaes import CMAESProgress, run_cmaes  # noqa: E402
+from source.run_artifacts import (  # noqa: E402
+    create_run_directory,
+    environment_snapshot,
+    save_controls,
+    save_history,
+    sha256_file,
+    write_json,
+)
+from source.simulator import FluxoniumResetSimulator  # noqa: E402
+
+# -----------------------------------------------------
+
+# Define uh.... macros? :3 -----------------------------
+DEFAULT_DURATION = 150.0
+
+
+# -----------------------------------
+
+
+# ---------- Auxillary Funcs to load and setup ----------------
+def load_json(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def make_smoke_config(physics_config: dict) -> dict:
+    """Return a cheaper in-memory configuration without editing the source JSON."""
+    smoke_config = copy.deepcopy(physics_config)
+    smoke_config["model_settings"]["cutoff"] = 8
+    smoke_config["model_settings"]["num_t_steps"] = 250
+    return smoke_config
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the current educational CMA-ES campaign."
+    )
+    parser.add_argument("--generations", type=int, default=5)
+    parser.add_argument("--popsize", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
+    parser.add_argument(
+        "--full-physics",
+        action="store_true",
+        help="Use the configured cutoff and time grid instead of the cheap smoke settings.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=str,
+        help=(
+            "Empty directory for this run, relative to the project root unless "
+            "absolute. Defaults to a timestamped directory under "
+            "data/output/cmaes/."
+        ),
+    )
+
+    return parser
+
+
+# --------------------------------------------------------------
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    physics_path = PROJECT_ROOT / "config" / "mini_audit.json"
+    optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
+    output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
+
+    physics_config = load_json(physics_path)
+    optimizer_config = load_json(optimizer_path)
+    if not args.full_physics:
+        physics_config = make_smoke_config(physics_config)
+
+    simulator = FluxoniumResetSimulator(physics_config)
+    num_steps = int(physics_config["model_settings"]["num_t_steps"])
+    times = np.linspace(0.0, args.duration, num_steps)
+    initial_weights = np.random.default_rng(args.seed).normal(
+        0.0, 0.1, size=simulator.n_controls
+    )
+
+    mode = "full configured physics" if args.full_physics else "smoke physics"
+
+    print(
+        f"CMA-ES run ({mode}): {args.generations} generations x "
+        f"{args.popsize} candidates on {args.workers} worker(s)"
+    )
+
+    # ------ Print output path--------
+    try:
+        display_output_path = output_path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        display_output_path = output_path
+    print(f"Saving run record to: {display_output_path}")
+
+    # -------------------------------------
+    #
+    #
+    # -----------------Save meta data -------
+    metadata = {
+        "status": "running",
+        "command": sys.argv,
+        "mode": "full" if args.full_physics else "smoke",
+        "physics_config": physics_config,
+        "optimizer_config": optimizer_config,
+        "run_parameters": {
+            "generations": args.generations,
+            "population_size": args.popsize,
+            "workers": args.workers,
+            "seed": args.seed,
+            "sigma0": float(optimizer_config["sigma0"]),
+            "duration_ns": args.duration,
+            "time_steps": num_steps,
+            "initial_weight_count": simulator.n_controls,
+        },
+        "environment": environment_snapshot(PROJECT_ROOT),
+    }
+
+    np.save(output_path / "initial_weights.npy", initial_weights)
+    metadata["initial_weights_sha256"] = sha256_file(
+        output_path / "initial_weights.npy"
+    )
+    write_json(output_path / "metadata.json", metadata)
+
+    termination_requested = False
+
+    def request_termination(_signal_number, _frame) -> None:
+        nonlocal termination_requested
+        if not termination_requested:
+            print(
+                "Termination signal received. The current generation will finish, "
+                "then the best completed result will be saved."
+            )
+        termination_requested = True
+
+    previous_sigterm_handler = signal.signal(signal.SIGTERM, request_termination)
+
+    def save_checkpoint(progress: CMAESProgress) -> None:
+        """Persist the newest fully completed generation before starting another."""
+        np.save(output_path / "best_weights.npy", progress.best_weights)
+        save_history(output_path / "history.csv", progress.history)
+        save_controls(
+            output_path / "controls.npz",
+            times,
+            simulator.controls(progress.best_weights, times),
+        )
+        metadata["completed_generations"] = len(progress.history)
+        metadata["completed_objective_evaluations"] = progress.evaluation_count
+        write_json(output_path / "metadata.json", metadata)
+
+    start = perf_counter()
+    try:
+        result = run_cmaes(
+            simulator,
+            physics_config,
+            times,
+            generations=args.generations,
+            population_size=args.popsize,
+            sigma0=float(optimizer_config["sigma0"]),
+            seed=args.seed,
+            workers=args.workers,
+            initial_weights=initial_weights,
+            on_generation=save_checkpoint,
+            should_stop=lambda: termination_requested,
+        )
+        elapsed = perf_counter() - start
+
+        summary = {
+            "status": "completed" if result.completed else "stopped",
+            "stop_reason": result.stop_reason,
+            "best_final_ground_population": result.best_reward,
+            "elapsed_seconds": elapsed,
+            "objective_evaluations": result.evaluation_count,
+            "artifacts_sha256": {
+                name: sha256_file(output_path / name)
+                for name in [
+                    "initial_weights.npy",
+                    "best_weights.npy",
+                    "history.csv",
+                    "controls.npz",
+                ]
+            },
+        }
+
+        if result.completed:
+            # A fresh simulator confirms that the saved pulse, not worker-local
+            # state, produces the result written to disk.
+            reproduced_reward = FluxoniumResetSimulator(
+                physics_config
+            ).final_ground_population(result.best_weights, times)
+            reproduction_delta = reproduced_reward - result.best_reward
+            if not np.isclose(
+                reproduced_reward, result.best_reward, rtol=1e-10, atol=1e-12
+            ):
+                raise RuntimeError(
+                    "Fresh-simulator reproduction did not match the recorded best reward: "
+                    f"{reproduced_reward:.12f} versus {result.best_reward:.12f}."
+                )
+            summary["fresh_reproduction_population"] = reproduced_reward
+            summary["reproduction_delta"] = reproduction_delta
+
+        metadata["status"] = summary["status"]
+        write_json(output_path / "metadata.json", metadata)
+        write_json(output_path / "summary.json", summary)
+
+        print(f"Best final P(g, 0): {result.best_reward:.6f}")
+        print(f"Best coefficient vector shape: {result.best_weights.shape}")
+        if result.completed:
+            print(f"Fresh reproduction: {reproduced_reward:.6f}")
+        else:
+            print("Stopped cleanly after a completed generation.")
+        print(f"Elapsed time: {elapsed:.2f} s")
+
+    except Exception as error:
+        metadata["status"] = "failed"
+        metadata["failure"] = f"{type(error).__name__}: {error}"
+        write_json(output_path / "metadata.json", metadata)
+        raise
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm_handler)
+
+
+if __name__ == "__main__":
+    main()

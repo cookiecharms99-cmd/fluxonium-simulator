@@ -1,35 +1,123 @@
-# 🚀 Cluster Submission Guide (SLURM)
+# Cluster smoke-job guide
 
-This guide explains how to run your Fluxonium optimizations on a High-Performance Computing (HPC) cluster using SLURM.
+This folder will hold the small SLURM submission scripts used to run the
+Fluxonium reset optimizer on the cluster. Start with one tiny smoke job. Its
+purpose is to confirm that the cluster can import the project, use the correct
+Python environment, run multiprocessing, and save a complete run record.
 
-## 1. The SLURM Script (`run_cmaes.slurm`)
-The script I created handles the "paperwork" for the cluster. Here is what the headers mean:
-- `--job-name`: How the job appears in the queue.
-- `--output/error`: Where the "print" statements and errors are saved. `%j` is replaced by the Job ID.
-- `--cpus-per-task`: Currently set to `1` because `buildingzone.py` is running serially. 
-- `--mem`: Memory limit. Fluxonium sims are usually light, but 8GB is a safe starting point.
-- `--time`: Max runtime (HH:MM:SS). The job will be killed if it exceeds this.
+Do not begin with a long optimization campaign. A successful one-generation
+smoke job is the checkpoint before spending significant cluster time.
 
-## 2. Common Commands
+## Before making a submission script
 
-### Submit a job
+On the cluster login node, confirm these facts first:
+
 ```bash
-sbatch jobs_to_send/run_cmaes.slurm
+pwd
+git status
+uv --version
+uv run python --version
 ```
 
-### Check your jobs
+Write down the absolute path printed by `pwd`. The submission script must
+`cd` into that project directory before it invokes Python. If `uv` is not
+available on the cluster, stop here and ask the cluster documentation or Dr.
+Fu's group how the project environment should be activated; do not silently
+switch to a different Python installation.
+
+## The prepared ten-minute job
+
+`jobs_to_send/cmaes_10min.slurm` is prepared for the first larger smoke run:
+20 generations, population 16, and four worker processes for at most ten
+minutes. It finds the repository from its own location, so it does not need a
+machine-specific absolute path.
+
 ```bash
-squeue -u your_username
+sbatch jobs_to_send/cmaes_10min.slurm
 ```
 
-### Cancel a job
+Why these choices:
+
+- `--workers 4` creates four simulator worker processes.
+- `--cpus-per-task=4` reserves four CPU cores for them. Keep these numbers
+  equal for now.
+- Twenty generations with population 16 means at most 320 objective
+  evaluations. This is still a bounded smoke campaign, not a final baseline.
+- The current runner sets numerical libraries to one thread per worker. That
+  prevents two worker processes from each trying to occupy every CPU core.
+- `%j` is replaced by the SLURM job ID. It gives the logs and output directory
+  a unique name, so concurrent jobs cannot overwrite one another.
+- `#SBATCH --signal=TERM@60` asks SLURM to warn the running processes 60
+  seconds before its hard time limit. The runner then finishes the current
+  generation, saves its checkpoint, and exits cleanly.
+
+The script deliberately does **not** use `--full-physics`; the default smoke
+configuration is cheaper and is the appropriate first time-limited run.
+
+## Submit and monitor
+
+From the repository root on the cluster:
+
+```bash
+squeue -u "$USER"
+```
+
+SLURM will print a job ID after `sbatch`. Watch its standard-output log with:
+
+```bash
+tail -f slurm-<JOB_ID>.out
+```
+
+If needed, cancel a queued or running job:
+
 ```bash
 scancel <JOB_ID>
 ```
 
-### View logs (live)
+## After the job finishes
+
+Check both the log and the run directory:
+
 ```bash
-tail -f jobs_to_send/logs/cmaes_<JOB_ID>.out
+cat slurm-<JOB_ID>.out
+cat data/output/cmaes/10min_<JOB_ID>/summary.json
 ```
 
+A successful smoke job should report a completed summary and contain:
 
+```text
+best_weights.npy
+controls.npz
+history.csv
+initial_weights.npy
+metadata.json
+summary.json
+```
+
+`summary.json` should have either `"status": "completed"`, with a
+`fresh_reproduction_population` matching the recorded best final population,
+or `"status": "stopped"`. A stopped result still preserves the best fully
+completed generation: `best_weights.npy`, `controls.npz`, and `history.csv`.
+It cannot preserve an individual candidate evaluation that SLURM kills midway
+through its solver call.
+
+## SLURM versus Bash
+
+Bash is the shell language that runs ordinary command scripts: `cd`, `mkdir`,
+and `uv run ...` are all Bash commands here.
+
+SLURM is the cluster scheduler. The `#SBATCH` lines are instructions for
+SLURM, not normal Bash commands: they ask it to reserve resources, choose a
+time limit, and save logs. When you run `sbatch script.slurm`, SLURM queues the
+request. Once the resources are available, it runs the rest of the file as a
+Bash script on a compute node.
+
+So a `.slurm` file is usually **a Bash script plus a resource request**. It is
+not a different programming language.
+
+## Before scaling up
+
+Only after the smoke job succeeds should we make a larger submission. Record
+the job ID, the output-folder path, runtime, objective-evaluation count, and
+final `P(g,0)`. Then increase one thing at a time: generations, population
+size, requested wall time, or physics fidelity.

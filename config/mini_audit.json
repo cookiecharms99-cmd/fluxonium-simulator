@@ -20,9 +20,9 @@
     }
   },
   "model_settings": {
-    "cutoff": 20,
+    "cutoff": 15,
     "n_flux": 40,
-    "n_charge": 0,
+    "n_charge": 20,
     "num_t_steps": 500,
 
     "qutip_opts": {

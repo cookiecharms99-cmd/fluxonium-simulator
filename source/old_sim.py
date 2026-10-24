@@ -210,9 +210,9 @@ if __name__ == "__main__":
 
     sim = FluxoniumSimulator(params)
 
-    x0 = np.random.normal(0.0, 0.1, size=(sim.n_flux + sim.n_drive))
+    x0 = np.random.normal(0.0, 0.1, size=(sim.n_flux))
     x_pulse = x0[: sim.n_flux]
-    x_drive = x0[sim.n_flux :]
+    x_drive = [0]
     print(len(x_pulse), len(x_drive))
     start = time.time()
     f = sim.get_fidelity(x0)

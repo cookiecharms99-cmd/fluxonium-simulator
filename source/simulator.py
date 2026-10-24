@@ -54,8 +54,9 @@ class FluxoniumResetSimulator:
         self.cutoff = int(self.settings["cutoff"])
         self.n_flux_controls = int(self.settings.get("n_flux", 0))
         self.n_charge_controls = int(self.settings.get("n_charge", 0))
-        self._basis = None
-        self._basis_shape = None
+        self._flux_basis = None
+        self._charge_basis = None
+        self._basis_relative_times = None
 
         flux_values = self.physics["flux_vals"]
         self.idle_flux = float(flux_values["idle_flux"])
@@ -94,8 +95,8 @@ class FluxoniumResetSimulator:
         cutoff = self.cutoff
 
         # Sparse identity matrices
-        I_f = sp.eye(cutoff, format="csr")
-        I_c = sp.eye(2, format="csr")
+        I_flux = sp.eye(cutoff, format="csr")
+        I_cavity = sp.eye(2, format="csr")
 
         # Base sparse operators from scqubits (LC basis)
         n_f = sp.csr_matrix(reference.n_operator(energy_esys=False))
@@ -108,18 +109,18 @@ class FluxoniumResetSimulator:
 
         # Precompute tensor products as Qobjs for mesolve
         dims = [[cutoff, 2], [cutoff, 2]]
-        self.n_tensor = qt.Qobj(sp.kron(n_f, I_c, format="csr"), dims=dims)
-        cos_tensor_sparse = sp.kron(cos_f, I_c, format="csr")
-        sin_tensor_sparse = sp.kron(sin_f, I_c, format="csr")
+        self.n_tensor = qt.Qobj(sp.kron(n_f, I_cavity, format="csr"), dims=dims)
+        cos_tensor_sparse = sp.kron(cos_f, I_cavity, format="csr")
+        sin_tensor_sparse = sp.kron(sin_f, I_cavity, format="csr")
 
         # SHO Hamiltonian bit
         levels = np.arange(cutoff, dtype=float) + 0.5
         h_LC_sparse = sp.diags(self.physics["omega_lc"] * levels, 0, format="csr")
 
-        # Cavity term: frequency * (I_f @ n_c) where n_c = a_c.dag @ a_c = [[0, 0], [0, 1]]
+        # Cavity term: frequency * (I_flux @ n_c) where n_c = a_c.dag @ a_c = [[0, 0], [0, 1]]
         n_c = sp.csr_matrix(([1.0], ([1], [1])), shape=(2, 2))
         h_cavity_sparse = self.physics["cavity"]["frequency"] * sp.kron(
-            I_f, n_c, format="csr"
+            I_flux, n_c, format="csr"
         )
 
         # Coupling term: coupling * (n_f @ sigmay)
@@ -129,7 +130,7 @@ class FluxoniumResetSimulator:
 
         # Total static Hamiltonian
         h_static_sparse = (
-            sp.kron(h_LC_sparse, I_c, format="csr")
+            sp.kron(h_LC_sparse, I_cavity, format="csr")
             + h_cavity_sparse
             + h_coupling_sparse
         )
@@ -141,7 +142,7 @@ class FluxoniumResetSimulator:
         self.h_drive = self.n_tensor
 
         # Keep sparse identity for collapse operators
-        self.I_flux = I_f
+        self.I_flux = I_flux
         self.c_ops = self.collapse_operators()
 
         self.initial_state = self.idle_mixture()
@@ -172,23 +173,40 @@ class FluxoniumResetSimulator:
     def controls(self, weights: Sequence[float], times: np.ndarray) -> ControlWaveforms:
         """Reconstruct controls; the flux waveform is an external phase."""
         weights = np.asarray(weights, dtype=float)
+        times = np.asarray(times, dtype=float)
         if weights.shape != (self.n_controls,):
             raise ValueError(
                 f"Expected {self.n_controls} weights, got {weights.shape}."
             )
+        if times.ndim != 1 or len(times) < 2:
+            raise ValueError(
+                "times must be a one-dimensional array with at least two samples."
+            )
 
-        duration = times[-1] - times[0]
-        shape = (len(times), self.n_controls)
-        if self._basis is None or self._basis_shape != shape:
-            self._basis = sine_basis(times - times[0], duration, self.n_controls)
-            self._basis_shape = shape
+        relative_times = times - times[0]
+        duration = relative_times[-1]
+        if duration <= 0:
+            raise ValueError("times must end after they begin.")
 
-        phase = (
-            self.idle_phase
-            + weights[: self.n_flux_controls] @ self._basis[: self.n_flux_controls]
-        )
-        envelope = weights[self.n_flux_controls :] @ self._basis[self.n_flux_controls :]
+        # Flux and charge bases share a time grid but have independent harmonic
+        # counts. Rebuild both whenever that relative grid changes.
+        if self._basis_relative_times is None or not np.array_equal(
+            relative_times, self._basis_relative_times
+        ):
+            self._flux_basis = sine_basis(
+                relative_times, duration, self.n_flux_controls
+            )
+            self._charge_basis = sine_basis(
+                relative_times, duration, self.n_charge_controls
+            )
+            self._basis_relative_times = relative_times.copy()
+
+        phase = self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
+
+        envelope = weights[self.n_flux_controls :] @ self._charge_basis
+
         drive = envelope * np.sin(float(self.physics["omega_ef"]) * times)
+
         return ControlWaveforms(external_phase=phase, charge_drive=drive)
 
     def hamiltonian(self, controls: ControlWaveforms) -> list:
@@ -248,3 +266,8 @@ class FluxoniumResetSimulator:
         """Return the final P(g, 0) at the idle bias; the reset objective."""
         result = self.evolve(weights, times, e_ops=[self.ground_projector])
         return float(np.real(result.expect[0][-1]))
+
+
+if __name__ == "__main__":
+    print("This is the simulator :3")
+    print("Hi :D")

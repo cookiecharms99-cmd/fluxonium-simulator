@@ -1,50 +1,146 @@
-# Fluxonium Project!!
+# Fluxonium Reset Optimization
 
-Hi welcome to my project!
+This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.99, while reducing the total reset time.
 
-_**Project Structure**_
+The repository is presently in a physics-audit and simulator-refactor stage. CMA-ES is the established optimization baseline; reinforcement learning is being investigated as a possible later approach, especially if one trained policy can transfer across device conditions or support feedback.
 
-- **`source`**: contains tools like the simulation object, datapipelining and some utilities!! :D
-- **`ReadFromSmarterPeople`**: references and materials incoming to read and understand
-- **`jobs_to_send`**: SLURM jobs to be sent to cluster
-- **`data`**: contains the data outputs from simulations, potentialy model weights if needed
-- **`model_config`**: contains the hyperparameters for the model
-- **`params.json`**: contains the specific physics parameters of the situation (might need better wording :3)
-- **`main`**: contains the actual production scripts to be used for analysis and answering the question
-- **`playzone`**: contains learning, random silliness, and patchy code to be sent out :3
+## Physical protocol
 
-# Project Core
+The practical initial condition is modeled as an incoherent mixture,
 
-Goal: Optimize Fluxonium qubit initialization protocol!
+\[
+\rho(0)=\tfrac12|g,0\rangle\langle g,0|+\tfrac12|e,0\rangle\langle e,0|.
+\]
 
-In the protocol, a Fluxonium qubit exists in a mixed state! A current pulse and a variation of flux from $\pi$ away and back to $\pi$ achieves this and the question is on how to optimize these curves to achieve some fidelity goal (not locked for now) in minimal time!
+The intended reset pathway is
 
-The relevant Hamiltonian equation is:
+\[
+|e,0\rangle \xrightarrow{\text{charge drive}} |f,0\rangle
+\xleftrightarrow{\text{fluxonium-cavity coupling}} |g,1\rangle
+\xrightarrow{\text{cavity decay}} |g,0\rangle.
+\]
 
-$H = 4E_c\hat{n}^2 + \frac{1}{2}E_L\hat{\phi}^2 - E_Jcos(\hat{\phi}
--\phi_t)$
+The fluxonium Hamiltonian is represented in a fixed truncated LC basis,
 
-Python project
+\[
+H_\mathrm{flux}(t)
+=H_\mathrm{LC}
+-E_J\cos\hat\phi\cos\varphi_\mathrm{ext}(t)
++E_J\sin\hat\phi\sin\varphi_\mathrm{ext}(t),
+\]
 
-Libraries: QuTip, Scqubits, scipy, more machine learning and number stuff
+with
 
-**Current vision**
+\[
+\varphi_\mathrm{ext}=2\pi\frac{\Phi_\mathrm{ext}}{\Phi_0}.
+\]
 
-- Make a program which searches the space in some time $T_0$ to achieve some fidelity f, then have it update intelligently and use a smaller time $T_1$ iteratively until we've minimized T for the desired fidelity!
+Half flux, \(\Phi_\mathrm{ext}/\Phi_0=0.5\), corresponds to phase \(\pi\) and is the idle endpoint. Quarter flux is the experimentally calibrated interaction neighborhood. A static model places the bare \(g\leftrightarrow f\) cavity resonance near \(0.253980967\,\Phi_0\); this model-derived value should not silently replace the experimental calibration point at \(0.25\,\Phi_0\).
 
-- Analyze key dimensions and patterns to develop physical intuition!
+The full numerical basis is
 
-**Current Task**
+\[
+\text{fluxonium LC basis}\otimes\{|0\rangle,|1\rangle\}_\mathrm{cavity}.
+\]
 
-- It's been a while since I've worked on the project
-- Correcting physics assumptions currently!!
-- Currenlty implementing mini hamiltonian
+For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
-**Current Architectural Plan**
+## Controls and objective
 
-- Conduct a search through $<{\phi}, {\Omega}>$ or what I'll call $X$ for some time $T_n$ until it hits target fidelity, then pipe the output data to an analyzer which will update to $T_{n+1}$, then retain info to get $X_0(T_{n+1})$ and iterate by feeding this in. Will try to use the global landscape and gradients too if it is not too expensive computationally though I do not know much :D
+Flux and charge-drive controls are parameterized by sine coefficients. The flux phase has the form
 
-# Where to go?
+\[
+\varphi_\mathrm{ext}(t)=\pi+\sum_k c_k^\Phi
+\sin\left(\frac{k\pi t}{T}\right),
+\]
 
-Indeed, see experiments_legit for a fully polished file to run.
-Particular files of note: source/simulator.py -> contains the code for instantiating all of the physics into code and actually making a simulator with given parameters! :D
+so the pulse automatically begins and ends at the half-flux idle point. The project simulator can optimize both flux and charge-drive coefficients. The professor's reference implementation optimizes only the flux pulse and keeps the charge drive fixed.
+
+The optimization objective is the final ground-state population
+
+\[
+P_{g0}(T)=\operatorname{Tr}\!\left[|g,0\rangle\langle g,0|\rho(T)\right].
+\]
+
+## Repository structure
+
+| Path | Purpose |
+| --- | --- |
+| `source/simulator.py` | Active refactored fluxonium-cavity simulator. |
+| `source/optimization/cmaes.py` | Reusable serial and multiprocessing CMA-ES machinery. |
+| `source/old_sim.py` | Earlier project simulator retained for comparison. |
+| `source/test.py` | Current simulator smoke test and timing script. |
+| `main/run_cmaes.py` | Command-line entry point for small or full-physics CMA-ES runs. |
+| `tests/` | Automated numerical and multiprocessing integration checks. |
+| `config/` | Physics, protocol, numerical, and optimizer configuration. |
+| `config/baseline_reset.json` | Human-readable statement of the intended baseline model. |
+| `config/mini_audit.json` | Working configuration used by the refactored simulator and audits. |
+| `References/Code/` | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
+| `References/Research-Texts/` | Papers and background reading, including the reinforcement-learning thesis. |
+| `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint. |
+| `playzone/` | Marimo notebooks, exploratory calculations, and learning experiments. |
+| `jobs_to_send/` | SLURM scripts for cluster runs. |
+| `data/` | Simulation and optimizer outputs. |
+| `main/` | Work-in-progress production optimization scripts. |
+| `params.json` | Legacy flat parameter file used by older code. |
+
+`main.py` is currently only a package placeholder and is not yet the experiment entry point.
+
+## Setup
+
+The project requires Python 3.12 or newer and uses `uv` for its reproducible environment.
+
+```bash
+uv sync
+```
+
+Run the current simulator smoke test with:
+
+```bash
+uv run python source/test.py
+```
+
+Run the automated test suite with:
+
+```bash
+uv run pytest
+```
+
+Run the inexpensive CMA-ES smoke campaign with:
+
+```bash
+uv run python main/run_cmaes.py
+```
+
+Pass `--full-physics` only when the configured cutoff and time grid are intended.
+
+## Current findings
+
+- At half flux, the audited static model gives \(g\to e\approx0.697075\) GHz and \(e\to f\approx4.323951\) GHz.
+- At quarter flux, the calculated charge matrix elements agree closely with the stored calibrated values: \(|\langle e|n|f\rangle|\approx0.3044204\) and \(|\langle g|n|f\rangle|\approx0.3748523\).
+- At \(0.25\,\Phi_0\), the bare \(g\to f\) transition is about 31.23 MHz detuned from the configured cavity frequency.
+- The coupled spectrum shows the expected avoided crossing between the states dominated by \(|f,0\rangle\) and \(|g,1\rangle\).
+- Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed.
+
+## Open questions
+
+The following must be resolved or validated before numerical optimization results are treated as final:
+
+- Confirm the cycles-per-nanosecond versus radians-per-nanosecond convention for every stored frequency and for QuTiP evolution.
+- Confirm the physical origin and units of the cavity decay parameter currently represented as \(\kappa=2\pi/40\), with collapse operator \(\sqrt{\kappa}\,a\).
+- Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance.
+- Run cutoff-convergence checks at fluxonium cutoffs 20, 25, and 30.
+- Validate the one-photon cavity truncation dynamically.
+- Establish a reproducible professor-code CMA-ES baseline, including seed, runtime, evaluation count, best final population, and saved pulse.
+- Benchmark simulators using identical physics, controls, time grids, solver settings, and timing boundaries.
+- Give the flux and charge controls independent sine bases beginning at harmonic \(k=1\).
+
+## Optimization plan
+
+1. Finish the simulator physics audit and resolve unit conventions.
+2. Freeze a trusted reference simulator and reproducible CMA-ES baseline.
+3. Profile objective evaluations and optimize implementation details without changing the modeled physics.
+4. Search for shorter pulses that reach the target ground-state population.
+5. Compare CMA-ES, intuitive pulses, and any reinforcement-learning approach under equal simulator-evaluation and wall-clock budgets.
+
+Reinforcement learning is not assumed to be better. It will be most compelling if it offers transfer across a family of device parameters, robustness, or useful feedback behavior rather than merely optimizing one fixed open-loop pulse.
