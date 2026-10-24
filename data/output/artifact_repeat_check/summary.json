@@ -1,0 +1,15 @@
+{
+  "artifacts_sha256": {
+    "best_weights.npy": "38a44ce027156219c344a27067b7da16e1d86a6405f5f104f591ee32807411cc",
+    "controls.npz": "9b00f17b0730642a6e57c06ad488d2edec5ea266e6a2b3433bb590967c5cfd5b",
+    "history.csv": "844fba5e8408576694c912d0331364296396011dd3fe6950cbaa96bec0d44c46",
+    "initial_weights.npy": "c2da109062f6fdc47b16e943c75b04c98fc91239923478a7ee50c7ed0eb089ba"
+  },
+  "best_final_ground_population": 0.21619132066024538,
+  "elapsed_seconds": 0.24836434700409882,
+  "fresh_reproduction_population": 0.21619132066024538,
+  "objective_evaluations": 4,
+  "reproduction_delta": 0.0,
+  "status": "completed",
+  "stop_reason": "requested_generation_count_reached"
+}

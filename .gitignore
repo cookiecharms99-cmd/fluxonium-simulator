@@ -11,9 +11,11 @@ __pycache__/
 .cache/
 
 
-# Ignore data results for now
+# Ignore large data results for now (so we keep metadata and summary data)
 *.npy
+*.npz
 *.csv
+
 
 # Generated plots
 *.png
@@ -34,6 +36,3 @@ References/
 
 # Generated editor files (if not needed in Git)
 playzone/__marimo__/
-
-# Generated simulation outputs
-output/

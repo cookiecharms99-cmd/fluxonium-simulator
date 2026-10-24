@@ -1,0 +1,85 @@
+{
+  "command": [
+    "main/run_cmaes.py",
+    "--generations",
+    "2",
+    "--popsize",
+    "2",
+    "--workers",
+    "1",
+    "--duration",
+    "5",
+    "--out-dir",
+    "data/output/artifact_smoke_check"
+  ],
+  "environment": {
+    "git_revision": "6692609d582f406cc7d8c3fcc47f7923d7fa3f54",
+    "platform": "Linux-6.19.8-surface-3-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]"
+  },
+  "initial_weights_sha256": "c2da109062f6fdc47b16e943c75b04c98fc91239923478a7ee50c7ed0eb089ba",
+  "mode": "smoke",
+  "optimizer_config": {
+    "basis_tag": "sine",
+    "clip_coeff": 0.0,
+    "coeff_bound": 0.0,
+    "conv_cnt": 0,
+    "conv_patience": 10,
+    "iters": 50,
+    "mean_gap": 5e-05,
+    "min_improve": 1e-06,
+    "out_dir": "data//cmaes//",
+    "patience": 50,
+    "popsize": 0,
+    "seed": 0,
+    "sigma0": 0.3,
+    "sigma_min": 0.004,
+    "std_min": 2e-05,
+    "target": 0.999,
+    "workers": 4
+  },
+  "physics_config": {
+    "model_settings": {
+      "cutoff": 8,
+      "n_charge": 20,
+      "n_flux": 40,
+      "num_t_steps": 250,
+      "qutip_opts": {
+        "qutip_atol": 1e-08,
+        "qutip_method": null,
+        "qutip_nsteps": 20000.0,
+        "qutip_rtol": 1e-06
+      }
+    },
+    "physics": {
+      "EC": 1.531,
+      "EJ": 4.164,
+      "EL": 0.685,
+      "Omega": 0.213,
+      "cavity": {
+        "coupling": 0.46932079985285463,
+        "decay_rate": 0.15707963267948966,
+        "frequency": 6.5172172187
+      },
+      "flux_vals": {
+        "idle_flux": 0.5,
+        "interaction_flux": 0.253980967
+      },
+      "n_ef": 0.304437775,
+      "n_gf": 0.374859134,
+      "omega_ef": 1.78991881,
+      "omega_lc": 2.89652896
+    }
+  },
+  "run_parameters": {
+    "duration_ns": 5.0,
+    "generations": 2,
+    "initial_weight_count": 60,
+    "population_size": 2,
+    "seed": 1234,
+    "sigma0": 0.3,
+    "time_steps": 250,
+    "workers": 1
+  },
+  "status": "completed"
+}
