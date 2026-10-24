@@ -21,8 +21,11 @@ __pycache__/
 *.jpeg
 *.svg
 
+
+
+
+# Private
 Notes/
-jobs_to_send/logs/
 
 References/
 
