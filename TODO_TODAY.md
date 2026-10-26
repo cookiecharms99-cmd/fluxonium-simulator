@@ -1,53 +1,83 @@
 # Today / next session
 
-Updated: 2026-10-23
+Updated: 2026-10-26
 
 This is the short working list. `ROADMAP.md` explains why the longer-term
 items are ordered this way.
 
-## First priority: prove the current campaign works end to end
+## First priority: finish the intuitive initialization path
 
-- [ x] Run the prepared laptop campaign:
+- [x] Add `config/reference_prof.json` and an explicit `reference` CMA-ES
+      protocol: 40 flux coefficients, calibrated charge drive fixed, and the
+      same device solver/objective as the joint-control simulator.
+- [x] Verify a one-generation cutoff-8 reference smoke run, including saved
+      controls and fresh-simulator reproduction.
+- [ ] Correctly polish and test `source/control_initialization.py`:
+  - the 150-ns waveform must reproduce the original ramp / hold / return;
+  - use names in phase units (`idle_phase`), a floating output array, and
+    clear validation of the timing fractions;
+  - retain the duration-scaled form as an explicitly named new variant, not
+    an unlabelled claim of exact legacy compatibility at other durations.
+- [ ] Add a least-squares projection from target external phase to the
+      `k=1..40` flux sine basis. Keep this pure pulse-to-coefficients logic in
+      `control_initialization.py`; do not store or mutate CMA-ES weights in
+      the simulator.
+- [ ] Add focused tests for pulse endpoints, the `pi/2` hold, and projection
+      reconstruction error on the reference time grid.
+- [ ] Set and document the reference configuration's interaction point as the
+      experimental `0.25 Phi_0`; keep the model-derived `0.253980967 Phi_0`
+      for separate diagnostic/resonance studies.
+- [ ] Evaluate these controls under identical cutoff-20 reference settings:
+  1. zero flux coefficients;
+  2. direct legacy 150-ns intuitive pulse;
+  3. its 40-sine least-squares reconstruction.
 
-  ```bash
-  bash jobs_to_send/cmaes_10min.slurm
-  ```
+## Make experiments legible
 
-- [x ] Inspect its `summary.json`, `history.csv`, and `controls.npz`.
-- [ x] Record the wall time, final `P(g,0)`, objective-evaluation count, and
-  output-folder path in a short note or commit message.
-- [ ] When Athene SSH is reachable, submit the same script with `sbatch` and
-      inspect the cluster artifacts and log.
+- [ ] Add initial-center provenance to run metadata: scheme name, source-run
+      path when relevant, and a hash of the initial coefficient vector.
+- [ ] Define two named run tiers:
+  - smoke: a fast software check (cutoff 8);
+  - reference: physically comparable results (cutoff 20).
+- [ ] Keep cutoff 15 for occasional profiling only; do not treat it as a
+      third scientific baseline.
+- [ ] Save enough optimizer state for diagnosis: CMA-ES mean and the final
+      generation's best candidate, in addition to the best-ever candidate.
 
-## Communication blockers
+## Small cleanup, after the reference baseline works
 
-- [ x] Send the OIT email about intermittent Athene SSH access, including an
-  exact error message and the approximate failed/successful times if possible.
-- [ x] Email Dr. Fu to ask whether she is available to meet tomorrow. Bring the
-  open questions about the cavity decay rate, units, experimental flux point,
-  and the former CMA-ES bottleneck.
+- [ ] Cache one idle-flux (`0.5 Phi_0`) scqubits `Fluxonium` instance and its
+      eigensystem for static operators, initial-state construction, and the
+      final `|g,0>` projector. Keep `new_fluxonium(flux_quanta)` for explicit
+      non-idle spectrum/pathway diagnostics; this is a startup cleanup, not a
+      change expected to speed up per-candidate `mesolve` appreciably.
 
-## Learning / research, no simulator changes yet
+## Interpret the overnight exploratory run correctly
 
-- [ x] Read the RL paper with one question in mind: what state, action,
-  reward, simulator cost, and comparison budget would make RL informative for
-  _this_ reset problem?
-- [ ] Sketch possible initial CMA-ES centers: zero coefficients, a projection
-      of the intuitive flux pulse into the sine basis, and a warm start from a
-      longer-duration pulse. Do not choose one without recording it in run
-      metadata.
+- [x] Inspect the interrupted joint-control cutoff-20 run. Its best-ever
+      `P(g,0)` was about 0.547857 at generation 13; the later population did
+      not improve it.
+- [ ] Treat this as an artifact/checkpointing test, not a claim about the
+      physics or a professor-comparable result. It optimized both flux and
+      charge and produced unconstrained-looking controls.
+- [ ] After the flux-only baseline exists, test restart CMA-ES fairly: compare
+      an ordinary run against a declared no-improvement restart rule at equal
+      total evaluation budget. Preserve best-ever results across restarts.
 
-## Next code change after the run infrastructure is trusted
+## Communication / infrastructure
 
-- [x ] Give flux and charge drive separate sine bases, both starting at
-  harmonic `k=1`; add endpoint and coefficient-length tests.
-- [ ] Decide and document the reference baseline: flux-only optimization with
-      the calibrated charge drive fixed, matching the professor's protocol.
+- [ ] Follow up when OIT replies about intermittent Athene SSH access; then
+      submit the bounded SLURM smoke job and inspect its artifacts.
+- [ ] Bring the unit, decay-rate, experimental flux-point, and historical
+      CMA-ES-bottleneck questions to Dr. Fu when you meet.
+- [ ] Ask Dr. Fu whether the original linear ramp/hold/return pulse encoded
+      hardware constraints, measured timing knowledge, or simply a physically
+      motivated starting guess.
 
 ## Explicitly not today
 
 - Do not build RL training yet.
-- Do not combine a new initial-weight scheme, a new charge basis, and a
-  performance refactor in one experiment.
-- Do not claim a physical improvement until unit conventions, decay rate, and
-  a comparable baseline are resolved.
+- Do not mix a new basis, a new initialization scheme, and optimizer changes
+  in a single comparison.
+- Do not claim a physical improvement until the fixed-charge flux-only
+  reference baseline and unit conventions are resolved.

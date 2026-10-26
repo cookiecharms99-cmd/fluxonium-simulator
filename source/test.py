@@ -11,6 +11,7 @@ with open(data_fp, "r") as data_file:
     params = json.load(data_file)
 
 print("Loaded parameters from mini_audit.json.")
+params["model_settings"]["cutoff"] = 20
 mysim = FluxoniumResetSimulator(params)
 
 # Generate a random control pulse weights array of size n_controls
@@ -24,6 +25,7 @@ num_steps = int(params["model_settings"].get("num_t_steps", 500))
 times = np.linspace(0.0, duration, num_steps)
 start = time.time()
 print(f"Running simulation with duration {duration} ns and {num_steps} time steps...")
+
 final_pop = mysim.final_ground_population(weights, times)
 print(f"Final ground state population P(g, 0): {final_pop:.6f}")
 end = time.time()

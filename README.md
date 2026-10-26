@@ -64,25 +64,26 @@ P_{g0}(T)=\operatorname{Tr}\!\left[|g,0\rangle\langle g,0|\rho(T)\right].
 
 ## Repository structure
 
-| Path | Purpose |
-| --- | --- |
-| `source/simulator.py` | Active refactored fluxonium-cavity simulator. |
-| `source/optimization/cmaes.py` | Reusable serial and multiprocessing CMA-ES machinery. |
-| `source/old_sim.py` | Earlier project simulator retained for comparison. |
-| `source/test.py` | Current simulator smoke test and timing script. |
-| `main/run_cmaes.py` | Command-line entry point for small or full-physics CMA-ES runs. |
-| `tests/` | Automated numerical and multiprocessing integration checks. |
-| `config/` | Physics, protocol, numerical, and optimizer configuration. |
-| `config/baseline_reset.json` | Human-readable statement of the intended baseline model. |
-| `config/mini_audit.json` | Working configuration used by the refactored simulator and audits. |
-| `References/Code/` | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
-| `References/Research-Texts/` | Papers and background reading, including the reinforcement-learning thesis. |
-| `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint. |
-| `playzone/` | Marimo notebooks, exploratory calculations, and learning experiments. |
-| `jobs_to_send/` | SLURM scripts for cluster runs. |
-| `data/` | Simulation and optimizer outputs. |
-| `main/` | Work-in-progress production optimization scripts. |
-| `params.json` | Legacy flat parameter file used by older code. |
+| Path                                        | Purpose                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `source/simulator.py`                       | Active refactored fluxonium-cavity simulator.                                                     |
+| `source/optimization/cmaes.py`              | Reusable serial and multiprocessing CMA-ES machinery.                                             |
+| `source/old_sim.py`                         | Earlier project simulator retained for comparison.                                                |
+| `source/test.py`                            | Current simulator smoke test and timing script.                                                   |
+| `main/run_cmaes.py`                         | Command-line entry point for small or full-physics CMA-ES runs.                                   |
+| `tests/`                                    | Automated numerical and multiprocessing integration checks.                                       |
+| `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
+| `config/baseline_reset.json`                | Human-readable statement of the intended baseline model.                                          |
+| `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
+| `config/reference_prof.json`                | Reference config file to test compability with old code to check assumptions                      |
+| `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
+| `References/Research-Texts/`                | Papers and background reading, including the reinforcement-learning thesis.                       |
+| `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint.                                    |
+| `playzone/`                                 | Marimo notebooks, exploratory calculations, and learning experiments.                             |
+| `jobs_to_send/`                             | SLURM scripts for cluster runs.                                                                   |
+| `data/`                                     | Simulation and optimizer outputs.                                                                 |
+| `main/`                                     | Work-in-progress production optimization scripts.                                                 |
+| `params.json`                               | Legacy flat parameter file used by older code.                                                    |
 
 `main.py` is currently only a package placeholder and is not yet the experiment entry point.
 
@@ -121,6 +122,12 @@ Pass `--full-physics` only when the configured cutoff and time grid are intended
 - At \(0.25\,\Phi_0\), the bare \(g\to f\) transition is about 31.23 MHz detuned from the configured cavity frequency.
 - The coupled spectrum shows the expected avoided crossing between the states dominated by \(|f,0\rangle\) and \(|g,1\rangle\).
 - Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed.
+
+See the analysis in `playzone/fluxonium_audit.py`. Run this from root
+
+```bash
+uv run marimo edit playzone/fluxonium_audit.py
+```
 
 ## Open questions
 

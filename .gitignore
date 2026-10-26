@@ -9,7 +9,7 @@ __pycache__/
 *.__pyc
 *.pyc
 .cache/
-
+.pytest_cache
 
 # Ignore large data results for now (so we keep metadata and summary data)
 *.npy

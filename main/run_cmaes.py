@@ -72,6 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
     parser.add_argument(
+        "--physics-config",
+        default="config/mini_audit.json",
+        help="Physics/model JSON path, relative to the project root by default.",
+    )
+    parser.add_argument(
+        "--control-protocol",
+        choices=("joint", "reference"),
+        default="joint",
+        help="Joint flux/charge optimization or the fixed-charge flux-only reference.",
+    )
+    parser.add_argument(
         "--full-physics",
         action="store_true",
         help="Use the configured cutoff and time grid instead of the cheap smoke settings.",
@@ -94,7 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    physics_path = PROJECT_ROOT / "config" / "mini_audit.json"
+    physics_path = Path(args.physics_config)
+    if not physics_path.is_absolute():
+        physics_path = PROJECT_ROOT / physics_path
     optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
     output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
 
@@ -106,14 +119,19 @@ def main() -> None:
     simulator = FluxoniumResetSimulator(physics_config)
     num_steps = int(physics_config["model_settings"]["num_t_steps"])
     times = np.linspace(0.0, args.duration, num_steps)
+    coefficient_count = (
+        simulator.n_controls
+        if args.control_protocol == "joint"
+        else simulator.n_flux_controls
+    )
     initial_weights = np.random.default_rng(args.seed).normal(
-        0.0, 0.1, size=simulator.n_controls
+        0.0, 0.1, size=coefficient_count
     )
 
     mode = "full configured physics" if args.full_physics else "smoke physics"
 
     print(
-        f"CMA-ES run ({mode}): {args.generations} generations x "
+        f"CMA-ES {args.control_protocol} run ({mode}): {args.generations} generations x "
         f"{args.popsize} candidates on {args.workers} worker(s)"
     )
 
@@ -142,7 +160,9 @@ def main() -> None:
             "sigma0": float(optimizer_config["sigma0"]),
             "duration_ns": args.duration,
             "time_steps": num_steps,
-            "initial_weight_count": simulator.n_controls,
+            "control_protocol": args.control_protocol,
+            "physics_config_path": str(physics_path.relative_to(PROJECT_ROOT)),
+            "initial_weight_count": coefficient_count,
         },
         "environment": environment_snapshot(PROJECT_ROOT),
     }
@@ -173,7 +193,11 @@ def main() -> None:
         save_controls(
             output_path / "controls.npz",
             times,
-            simulator.controls(progress.best_weights, times),
+            (
+                simulator.controls(progress.best_weights, times)
+                if args.control_protocol == "joint"
+                else simulator.reference_controls(progress.best_weights, times)
+            ),
         )
         metadata["completed_generations"] = len(progress.history)
         metadata["completed_objective_evaluations"] = progress.evaluation_count
@@ -190,6 +214,7 @@ def main() -> None:
             sigma0=float(optimizer_config["sigma0"]),
             seed=args.seed,
             workers=args.workers,
+            control_protocol=args.control_protocol,
             initial_weights=initial_weights,
             on_generation=save_checkpoint,
             should_stop=lambda: termination_requested,
@@ -216,9 +241,17 @@ def main() -> None:
         if result.completed:
             # A fresh simulator confirms that the saved pulse, not worker-local
             # state, produces the result written to disk.
-            reproduced_reward = FluxoniumResetSimulator(
-                physics_config
-            ).final_ground_population(result.best_weights, times)
+            reproduction_simulator = FluxoniumResetSimulator(physics_config)
+            if args.control_protocol == "joint":
+                reproduced_reward = reproduction_simulator.final_ground_population(
+                    result.best_weights, times
+                )
+            else:
+                reproduced_reward = (
+                    reproduction_simulator.reference_final_ground_population(
+                        result.best_weights, times
+                    )
+                )
             reproduction_delta = reproduced_reward - result.best_reward
             if not np.isclose(
                 reproduced_reward, result.best_reward, rtol=1e-10, atol=1e-12

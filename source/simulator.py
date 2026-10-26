@@ -23,7 +23,7 @@ def sine_basis(times: np.ndarray, duration: float, count: int) -> np.ndarray:
     if count == 0:
         return np.empty((0, len(times)))
     k = np.arange(1, count + 1, dtype=float)[:, None]
-    return np.sin(np.pi * k * times[None, :] / duration)
+    return np.sin(np.pi * k * times / duration)
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,9 @@ class FluxoniumResetSimulator:
         self.n_charge_controls = int(self.settings.get("n_charge", 0))
         self._flux_basis = None
         self._charge_basis = None
-        self._basis_relative_times = None
+        self._times = None
+        self._reference_flux_basis = None
+        self._reference_times = None
 
         flux_values = self.physics["flux_vals"]
         self.idle_flux = float(flux_values["idle_flux"])
@@ -91,7 +93,7 @@ class FluxoniumResetSimulator:
 
     def build_static_system(self) -> None:
         """Build operators once in the fixed LC x {|0>, |1>} basis."""
-        reference = self.new_fluxonium(0.0)
+        reference = self.new_fluxonium(self.idle_flux)
         cutoff = self.cutoff
 
         # Sparse identity matrices
@@ -173,41 +175,80 @@ class FluxoniumResetSimulator:
     def controls(self, weights: Sequence[float], times: np.ndarray) -> ControlWaveforms:
         """Reconstruct controls; the flux waveform is an external phase."""
         weights = np.asarray(weights, dtype=float)
-        times = np.asarray(times, dtype=float)
         if weights.shape != (self.n_controls,):
             raise ValueError(
                 f"Expected {self.n_controls} weights, got {weights.shape}."
             )
+        duration = times[-1]
+
+        # Erm idk if this error handling is needed lol, commented out for now to save my nanoseconds :3
         if times.ndim != 1 or len(times) < 2:
             raise ValueError(
                 "times must be a one-dimensional array with at least two samples."
             )
 
-        relative_times = times - times[0]
-        duration = relative_times[-1]
-        if duration <= 0:
-            raise ValueError("times must end after they begin.")
-
         # Flux and charge bases share a time grid but have independent harmonic
         # counts. Rebuild both whenever that relative grid changes.
-        if self._basis_relative_times is None or not np.array_equal(
-            relative_times, self._basis_relative_times
+        if self._times is None or not np.array_equal(times, self._times):
+            self._flux_basis = sine_basis(times, duration, self.n_flux_controls)
+            self._charge_basis = sine_basis(times, duration, self.n_charge_controls)
+            self._times = times.copy()
+
+        flux_control = (
+            self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
+        )
+
+        charge_envelope = weights[self.n_flux_controls :] @ self._charge_basis
+
+        charge_control = charge_envelope * np.sin(
+            float(self.physics["omega_ef"]) * times
+        )
+
+        return ControlWaveforms(
+            external_phase=flux_control, charge_drive=charge_control
+        )
+
+    def flux_pulse_to_weights(pulse: np.ndarray):
+        """
+        Update weights vector with taking in a pulse array, either DST or interpolation to a new weights based off of current basis.
+        """
+        pass
+
+    def charge_pulse_to_weights():
+        """
+        Update weights vector with taking in a pulse array, either DST or interpolation to a new weights based off of current basis.
+        """
+        pass
+
+    def reference_controls(
+        self, flux_weights: Sequence[float], times: np.ndarray
+    ) -> ControlWaveforms:
+        """Build the professor-style flux-only pulse with fixed charge drive."""
+        flux_weights = np.asarray(flux_weights, dtype=float)
+        if flux_weights.shape != (self.n_flux_controls,):
+            raise ValueError(
+                f"Expected {self.n_flux_controls} weights, got {flux_weights.shape}."
+            )
+        duration = times[-1]
+
+        if self._reference_times is None or not np.array_equal(
+            times, self._reference_times
         ):
-            self._flux_basis = sine_basis(
-                relative_times, duration, self.n_flux_controls
+            self._reference_flux_basis = sine_basis(
+                times, duration, self.n_flux_controls
             )
-            self._charge_basis = sine_basis(
-                relative_times, duration, self.n_charge_controls
-            )
-            self._basis_relative_times = relative_times.copy()
+            self._reference_times = times.copy()
 
-        phase = self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
+        flux_control = (
+            self.idle_phase
+            + flux_weights[: self.n_flux_controls] @ self._reference_flux_basis
+        )
 
-        envelope = weights[self.n_flux_controls :] @ self._charge_basis
+        charge_drive = (self.physics["Omega"] / self.physics["n_ef"]) * np.sin(
+            self.physics["omega_ef"] * times
+        )
 
-        drive = envelope * np.sin(float(self.physics["omega_ef"]) * times)
-
-        return ControlWaveforms(external_phase=phase, charge_drive=drive)
+        return ControlWaveforms(external_phase=flux_control, charge_drive=charge_drive)
 
     def hamiltonian(self, controls: ControlWaveforms) -> list:
         """Return QuTiP's list-form time-dependent Hamiltonian."""
@@ -247,6 +288,24 @@ class FluxoniumResetSimulator:
     ):
         """Evolve a density matrix and optionally record expectation values."""
         waveform = self.controls(weights, times)
+        return self._evolve_waveform(
+            waveform,
+            times,
+            initial_state=initial_state,
+            e_ops=e_ops,
+            cavity_decay_rate=cavity_decay_rate,
+        )
+
+    def _evolve_waveform(
+        self,
+        waveform: ControlWaveforms,
+        times: np.ndarray,
+        *,
+        initial_state: qt.Qobj | None = None,
+        e_ops: Sequence[qt.Qobj] | None = None,
+        cavity_decay_rate: float | None = None,
+    ):
+        """Evolve preconstructed controls using the shared device model."""
         c_ops = self.c_ops
         if cavity_decay_rate is not None:
             c_ops = self.collapse_operators(cavity_decay_rate)
@@ -265,6 +324,14 @@ class FluxoniumResetSimulator:
     ) -> float:
         """Return the final P(g, 0) at the idle bias; the reset objective."""
         result = self.evolve(weights, times, e_ops=[self.ground_projector])
+        return float(np.real(result.expect[0][-1]))
+
+    def reference_final_ground_population(
+        self, flux_weights: Sequence[float], times: np.ndarray
+    ) -> float:
+        """Return final P(g, 0) for the flux-only fixed-charge protocol."""
+        waveform = self.reference_controls(flux_weights, times)
+        result = self._evolve_waveform(waveform, times, e_ops=[self.ground_projector])
         return float(np.real(result.expect[0][-1]))
 
 

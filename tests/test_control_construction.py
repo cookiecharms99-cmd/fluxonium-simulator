@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+
 from source.simulator import FluxoniumResetSimulator
 
 duration = 20.0
@@ -31,6 +32,7 @@ def test_first_charge_coefficient_uses_the_first_charge_harmonic() -> None:
         float(params["physics"]["omega_ef"]) * time_arr
     )
     np.testing.assert_allclose(drive, expected_drive)
+
     # They should clamp at endpoints as we desire
     np.testing.assert_allclose(
         controls.external_phase[[0, -1]],
@@ -55,9 +57,7 @@ def test_basis_cache_refreshes_for_a_new_duration() -> None:
         weights,
         np.linspace(0.0, 20.0, params["model_settings"]["num_t_steps"]),
     )
-    short_times = np.linspace(
-        0.0, 10.0, params["model_settings"]["num_t_steps"]
-    )
+    short_times = np.linspace(0.0, 10.0, params["model_settings"]["num_t_steps"])
     short_controls = simulator.controls(weights, short_times)
 
     expected_drive = np.sin(np.pi * short_times / 10.0) * np.sin(

@@ -1,4 +1,4 @@
-"""Fast checks for the on-disk CMA-ES run record helpers."""
+"""Fast checks for the on-disk CMA-ES run record helper."""
 
 from __future__ import annotations
 

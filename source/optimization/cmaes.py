@@ -11,14 +11,18 @@ import multiprocessing as mp
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Literal
 
 import cma
 import numpy as np
 
 from source.simulator import FluxoniumResetSimulator
 
+ControlProtocol = Literal["joint", "reference"]
+
 WORKER_SIMULATOR: FluxoniumResetSimulator | None = None
 WORKER_TIMES: np.ndarray | None = None
+WORKER_CONTROL_PROTOCOL: ControlProtocol | None = None
 
 
 @dataclass(frozen=True)
@@ -48,20 +52,56 @@ GenerationCallback = Callable[[CMAESProgress], None]
 StopRequested = Callable[[], bool]
 
 
-def initialize_worker(physics_config: dict, times: np.ndarray) -> None:
+def parameter_count(
+    simulator: FluxoniumResetSimulator, control_protocol: ControlProtocol
+) -> int:
+    """Return the coefficient-vector length required by one control protocol."""
+    if control_protocol == "joint":
+        return simulator.n_controls
+    if control_protocol == "reference":
+        return simulator.n_flux_controls
+    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
+
+
+def evaluate_candidate(
+    simulator: FluxoniumResetSimulator,
+    candidate: np.ndarray,
+    times: np.ndarray,
+    control_protocol: ControlProtocol,
+) -> float:
+    """Evaluate one candidate under the selected physical control protocol."""
+    if control_protocol == "joint":
+        return simulator.final_ground_population(weights=candidate, times=times)
+    if control_protocol == "reference":
+        return simulator.reference_final_ground_population(
+            flux_weights=candidate, times=times
+        )
+    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
+
+
+def initialize_worker(
+    physics_config: dict, times: np.ndarray, control_protocol: ControlProtocol
+) -> None:
     """Construct one private simulator inside each worker process."""
-    global WORKER_SIMULATOR, WORKER_TIMES
+    global WORKER_SIMULATOR, WORKER_TIMES, WORKER_CONTROL_PROTOCOL
     WORKER_SIMULATOR = FluxoniumResetSimulator(physics_config)
     WORKER_TIMES = times
+    WORKER_CONTROL_PROTOCOL = control_protocol
 
 
 def evaluate_worker(candidate: np.ndarray) -> float:
     """Evaluate one candidate using this worker's cached simulator."""
-    if WORKER_SIMULATOR is None or WORKER_TIMES is None:
+    if (
+        WORKER_SIMULATOR is None
+        or WORKER_TIMES is None
+        or WORKER_CONTROL_PROTOCOL is None
+    ):
         raise RuntimeError("Worker physics was not initialized.")
-    return WORKER_SIMULATOR.final_ground_population(
-        weights=candidate,
-        times=WORKER_TIMES,
+    return evaluate_candidate(
+        WORKER_SIMULATOR,
+        candidate,
+        WORKER_TIMES,
+        WORKER_CONTROL_PROTOCOL,
     )
 
 
@@ -69,11 +109,13 @@ def evaluate_serial(
     simulator: FluxoniumResetSimulator,
     candidates: Sequence[np.ndarray],
     times: np.ndarray,
+    *,
+    control_protocol: ControlProtocol = "joint",
 ) -> np.ndarray:
     """Evaluate one candidate population in the current process."""
     return np.asarray(
         [
-            simulator.final_ground_population(weights=candidate, times=times)
+            evaluate_candidate(simulator, candidate, times, control_protocol)
             for candidate in candidates
         ],
         dtype=float,
@@ -86,6 +128,7 @@ def evaluate_parallel(
     times: np.ndarray,
     *,
     workers: int,
+    control_protocol: ControlProtocol = "joint",
 ) -> np.ndarray:
     """Evaluate one population using worker-local simulator instances."""
     if workers <= 0:
@@ -95,7 +138,7 @@ def evaluate_parallel(
     with context.Pool(
         processes=workers,
         initializer=initialize_worker,
-        initargs=(physics_config, times),
+        initargs=(physics_config, times, control_protocol),
     ) as pool:
         return np.asarray(pool.map(evaluate_worker, candidates), dtype=float)
 
@@ -184,6 +227,7 @@ def run_cmaes(
     sigma0: float,
     seed: int,
     workers: int = 1,
+    control_protocol: ControlProtocol = "joint",
     initial_weights: np.ndarray | None = None,
     on_generation: GenerationCallback | None = None,
     should_stop: StopRequested | None = None,
@@ -200,15 +244,17 @@ def run_cmaes(
     if workers <= 0:
         raise ValueError("workers must be positive.")
 
+    coefficient_count = parameter_count(simulator, control_protocol)
     if initial_weights is None:
         rng = np.random.default_rng(seed)
-        initial_weights = rng.normal(0.0, 0.1, size=simulator.n_controls)
+        initial_weights = rng.normal(0.0, 0.1, size=coefficient_count)
     else:
         initial_weights = np.asarray(initial_weights, dtype=float).copy()
 
-    if initial_weights.shape != (simulator.n_controls,):
+    if initial_weights.shape != (coefficient_count,):
         raise ValueError(
-            f"Expected {simulator.n_controls} initial weights, "
+            f"Expected {coefficient_count} initial weights for "
+            f"{control_protocol!r} protocol, "
             f"got {initial_weights.shape}."
         )
 
@@ -225,7 +271,9 @@ def run_cmaes(
     if workers == 1:
         best_reward, best_weights, history, completed = run_generations(
             strategy,
-            lambda candidates: evaluate_serial(simulator, candidates, times),
+            lambda candidates: evaluate_serial(
+                simulator, candidates, times, control_protocol=control_protocol
+            ),
             generations=generations,
             on_generation=on_generation,
             should_stop=should_stop,
@@ -237,7 +285,7 @@ def run_cmaes(
         with context.Pool(
             processes=workers,
             initializer=initialize_worker,
-            initargs=(physics_config, times),
+            initargs=(physics_config, times, control_protocol),
         ) as pool:
             best_reward, best_weights, history, completed = run_generations(
                 strategy,
