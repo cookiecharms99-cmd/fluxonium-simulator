@@ -8,40 +8,30 @@ The repository is presently in a physics-audit and simulator-refactor stage. CMA
 
 The practical initial condition is modeled as an incoherent mixture,
 
-\[
-\rho(0)=\tfrac12|g,0\rangle\langle g,0|+\tfrac12|e,0\rangle\langle e,0|.
-\]
+$\rho(0)=\tfrac12|g,0\rangle\langle g,0|+\tfrac12|e,0\rangle\langle e,0|$
 
 The intended reset pathway is
 
-\[
-|e,0\rangle \xrightarrow{\text{charge drive}} |f,0\rangle
+$|e,0\rangle \xrightarrow{\text{charge drive}} |f,0\rangle
 \xleftrightarrow{\text{fluxonium-cavity coupling}} |g,1\rangle
-\xrightarrow{\text{cavity decay}} |g,0\rangle.
-\]
+\xrightarrow{\text{cavity decay}} |g,0\rangle$
 
 The fluxonium Hamiltonian is represented in a fixed truncated LC basis,
 
-\[
-H_\mathrm{flux}(t)
+$H_\mathrm{flux}(t)
 =H_\mathrm{LC}
 -E_J\cos\hat\phi\cos\varphi_\mathrm{ext}(t)
-+E_J\sin\hat\phi\sin\varphi_\mathrm{ext}(t),
-\]
++E_J\sin\hat\phi\sin\varphi_\mathrm{ext}(t),$
 
 with
 
-\[
-\varphi_\mathrm{ext}=2\pi\frac{\Phi_\mathrm{ext}}{\Phi_0}.
-\]
+$\phi_{ext}=2\pi\frac{\Phi_{ext}}{\Phi_0}.$
 
-Half flux, \(\Phi_\mathrm{ext}/\Phi_0=0.5\), corresponds to phase \(\pi\) and is the idle endpoint. Quarter flux is the experimentally calibrated interaction neighborhood. A static model places the bare \(g\leftrightarrow f\) cavity resonance near \(0.253980967\,\Phi_0\); this model-derived value should not silently replace the experimental calibration point at \(0.25\,\Phi_0\).
+Half flux,($\Phi_\mathrm{ext}/\Phi_0=0.5$), corresponds to phase ($pi$) and is the idle endpoint. Quarter flux is the experimentally calibrated interaction neighborhood. A static model places the bare ($g\leftrightarrow f$) cavity resonance near ($0.253980967,\Phi_0$); this model-derived value should not silently replace the experimental calibration point at ($0.25\,\Phi_0$).
 
 The full numerical basis is
 
-\[
-\text{fluxonium LC basis}\otimes\{|0\rangle,|1\rangle\}_\mathrm{cavity}.
-\]
+[$\text{fluxonium LC basis}\otimes\{|0\rangle,|1\rangle\}_\mathrm{cavity}.$]
 
 For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
@@ -49,18 +39,14 @@ For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
 Flux and charge-drive controls are parameterized by sine coefficients. The flux phase has the form
 
-\[
-\varphi_\mathrm{ext}(t)=\pi+\sum_k c_k^\Phi
-\sin\left(\frac{k\pi t}{T}\right),
-\]
+$\phi_\mathrm{ext}(t)=\pi+\sum_k c_k^\Phi
+\sin\left(\frac{k\pi t}{T}\right)$
 
 so the pulse automatically begins and ends at the half-flux idle point. The project simulator can optimize both flux and charge-drive coefficients. The professor's reference implementation optimizes only the flux pulse and keeps the charge drive fixed.
 
 The optimization objective is the final ground-state population
 
-\[
-P_{g0}(T)=\operatorname{Tr}\!\left[|g,0\rangle\langle g,0|\rho(T)\right].
-\]
+[$P_{g0}(T)=\operatorname{Tr}\!\left[|g,0\rangle\langle g,0|\rho(T)\right].$]
 
 ## Repository structure
 
@@ -117,10 +103,10 @@ Pass `--full-physics` only when the configured cutoff and time grid are intended
 
 ## Current findings
 
-- At half flux, the audited static model gives \(g\to e\approx0.697075\) GHz and \(e\to f\approx4.323951\) GHz.
-- At quarter flux, the calculated charge matrix elements agree closely with the stored calibrated values: \(|\langle e|n|f\rangle|\approx0.3044204\) and \(|\langle g|n|f\rangle|\approx0.3748523\).
-- At \(0.25\,\Phi_0\), the bare \(g\to f\) transition is about 31.23 MHz detuned from the configured cavity frequency.
-- The coupled spectrum shows the expected avoided crossing between the states dominated by \(|f,0\rangle\) and \(|g,1\rangle\).
+- At half flux, the audited static model gives ($g\to e\approx0.697075$) GHz and ($e\to f\approx4.323951$) GHz.
+- At quarter flux, the calculated charge matrix elements agree closely with the stored calibrated values: ($|\langle e|n|f\rangle|\approx0.3044204$) and ($|\langle g|n|f\rangle|\approx0.3748523$).
+- At ($0.25,\Phi_0$), the bare ($g\to f$) transition is about 31.23 MHz detuned from the configured cavity frequency.
+- The coupled spectrum shows the expected avoided crossing between the states dominated by ($|f,0\rangle$) and ($|g,1\rangle$).
 - Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed.
 
 See the analysis in `playzone/fluxonium_audit.py`. Run this from root
@@ -134,7 +120,7 @@ uv run marimo edit playzone/fluxonium_audit.py
 The following must be resolved or validated before numerical optimization results are treated as final:
 
 - Confirm the cycles-per-nanosecond versus radians-per-nanosecond convention for every stored frequency and for QuTiP evolution.
-- Confirm the physical origin and units of the cavity decay parameter currently represented as \(\kappa=2\pi/40\), with collapse operator \(\sqrt{\kappa}\,a\).
+- Confirm the physical origin and units of the cavity decay parameter currently represented as ($\kappa=2\pi/40$), with collapse operator ($\sqrt{\kappa},a$).
 - Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance.
 - Run cutoff-convergence checks at fluxonium cutoffs 20, 25, and 30.
 - Validate the one-photon cavity truncation dynamically.
