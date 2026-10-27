@@ -13,12 +13,16 @@
 # cluster environment before submitting the six-hour scientific campaign.
 set -euo pipefail
 
+
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+echo "Current directory on compute node: $(pwd)"
+ls -ld main/run_cmaes.py
 JOB_LABEL="${SLURM_JOB_ID:-local_$(date -u +%Y%m%dT%H%M%SZ)}"
 
-uv run main/run_cmaes.py \
+uv run python main/run_cmaes.py \
   --physics-config config/reference_prof.json \
   --control-protocol reference \
   --initialization legacy_piecewise_lstsq \
