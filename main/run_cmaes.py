@@ -28,6 +28,7 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import source.control_initialization as control_init
 from source.optimization.cmaes import CMAESProgress, run_cmaes  # noqa: E402
 from source.run_artifacts import (  # noqa: E402
     create_run_directory,
@@ -37,7 +38,10 @@ from source.run_artifacts import (  # noqa: E402
     sha256_file,
     write_json,
 )
-from source.simulator import FluxoniumResetSimulator  # noqa: E402
+from source.simulator import (
+    FluxoniumResetSimulator,  # noqa: E402
+    sine_basis,
+)
 
 # -----------------------------------------------------
 
@@ -83,6 +87,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Joint flux/charge optimization or the fixed-charge flux-only reference.",
     )
     parser.add_argument(
+        "--initialization",
+        choices=("zero", "random", "legacy_piecewise_lstsq"),
+        default="random",
+        help=(
+            "CMA-ES center: zero coefficients, seeded random coefficients, or "
+            "the 150-ns professor-inspired piecewise flux pulse projected into "
+            "the sine basis."
+        ),
+    )
+    parser.add_argument(
         "--full-physics",
         action="store_true",
         help="Use the configured cutoff and time grid instead of the cheap smoke settings.",
@@ -96,7 +110,6 @@ def build_parser() -> argparse.ArgumentParser:
             "data/output/cmaes/."
         ),
     )
-
     return parser
 
 
@@ -109,8 +122,6 @@ def main() -> None:
     if not physics_path.is_absolute():
         physics_path = PROJECT_ROOT / physics_path
     optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
-    output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
-
     physics_config = load_json(physics_path)
     optimizer_config = load_json(optimizer_path)
     if not args.full_physics:
@@ -124,16 +135,44 @@ def main() -> None:
         if args.control_protocol == "joint"
         else simulator.n_flux_controls
     )
-    initial_weights = np.random.default_rng(args.seed).normal(
-        0.0, 0.1, size=coefficient_count
-    )
 
+    if args.initialization == "zero":
+        initial_weights = np.zeros(coefficient_count)
+    elif args.initialization == "random":
+        initial_weights = np.random.default_rng(args.seed).normal(
+            0.0, 0.1, size=coefficient_count
+        )
+    else:
+        if args.control_protocol != "reference":
+            raise ValueError(
+                "legacy_piecewise_lstsq is currently defined only for the "
+                "fixed-charge reference protocol."
+            )
+        if not np.isclose(args.duration, DEFAULT_DURATION):
+            raise ValueError(
+                "legacy_piecewise_lstsq exactly represents the professor's "
+                f"{DEFAULT_DURATION:g}-ns schedule; choose duration {DEFAULT_DURATION:g}."
+            )
+        initial_flux_pulse = control_init.piecewise_pulse_init(
+            times=times, duration=args.duration
+        )
+        flux_basis = sine_basis(
+            times=times, duration=args.duration, count=simulator.n_flux_controls
+        )
+        initial_weights = control_init.lst_sq_projection_flux(
+            pulse=initial_flux_pulse,
+            basis_arr=flux_basis,
+            idle_phase=simulator.idle_phase,
+        )
+
+    output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
     mode = "full configured physics" if args.full_physics else "smoke physics"
 
     print(
         f"CMA-ES {args.control_protocol} run ({mode}): {args.generations} generations x "
         f"{args.popsize} candidates on {args.workers} worker(s)"
     )
+    print(f"Initialization: {args.initialization}")
 
     # ------ Print output path--------
     try:
@@ -161,6 +200,7 @@ def main() -> None:
             "duration_ns": args.duration,
             "time_steps": num_steps,
             "control_protocol": args.control_protocol,
+            "initialization_scheme": args.initialization,
             "physics_config_path": str(physics_path.relative_to(PROJECT_ROOT)),
             "initial_weight_count": coefficient_count,
         },

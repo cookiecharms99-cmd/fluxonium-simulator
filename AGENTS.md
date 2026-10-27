@@ -5,6 +5,9 @@ This repository belongs to a physics student working with Dr. Fu on fluxonium ac
 ## Sources of truth
 
 - Read `README.md` for project scope, current architecture, confirmed findings, and open questions.
+- Read `PROJECT_HANDOFF.md` for the current implementation
+  checkpoint and immediate next task. Update or replace this handoff when a
+  material project milestone is completed.
 - Use `References/fluxonium-project-handoff.docx` for the detailed physics handoff.
 - Use `References/Code/` to understand the professor's baseline. Do not modify reference code unless explicitly asked; adapt or compare it elsewhere.
 - Treat calibrated experimental values as authoritative when their provenance is known. Use scqubits to construct operators, eigenstates, and model checks, but do not silently replace measured values with simulated values.
@@ -31,6 +34,13 @@ This repository belongs to a physics student working with Dr. Fu on fluxonium ac
 - Never change physics and optimize performance in the same unverified step. Compare final populations and representative trajectories before and after performance changes.
 - Add focused tests for Hamiltonian Hermiticity, density-matrix trace, non-negative populations, pulse endpoints, deterministic repeated evaluation, and cutoff convergence.
 - Use `uv run` for project commands. Do not add dependencies without explaining why they are needed.
+- Keep pulse construction and pulse-to-coefficient initialization in
+  `source/control_initialization.py`. The simulator maps a supplied candidate
+  to controls and dynamics; it should not own or mutate optimizer weights.
+- Keep the `joint` and `reference` control protocols explicit. The reference
+  protocol is 40 flux coefficients with the calibrated charge drive fixed;
+  do not replace it with a copied simulator or accidentally evaluate it using
+  the joint-control pathway.
 
 ## Experimental discipline
 
@@ -38,6 +48,9 @@ This repository belongs to a physics student working with Dr. Fu on fluxonium ac
 - Record random seed, runtime, objective-evaluation count, final population, duration, and output artifact location.
 - Keep the professor's CMA-ES result, the intuitive pulse, and new optimizers comparable under equal evaluation and wall-clock budgets.
 - Reinforcement learning is exploratory. Keep `mesolve` as the trusted reference until a reduced solver reproduces relevant trajectories and final populations within a declared tolerance.
+- A passing smoke run validates plumbing, not physical improvement. Do not call
+  the joint-control exploratory result professor-comparable; establish the
+  cutoff-20 fixed-charge reference scores first.
 
 ## Working style
 

@@ -16,7 +16,7 @@
 
     "flux_vals": {
       "idle_flux": 0.5,
-      "interaction_flux": 0.253980967
+      "interaction_flux": 0.25
     }
   },
   "model_settings": {

@@ -1,6 +1,6 @@
 # Today / next session
 
-Updated: 2026-10-26
+Updated: 2026-10-27
 
 This is the short working list. `ROADMAP.md` explains why the longer-term
 items are ordered this way.
@@ -12,19 +12,22 @@ items are ordered this way.
       same device solver/objective as the joint-control simulator.
 - [x] Verify a one-generation cutoff-8 reference smoke run, including saved
       controls and fresh-simulator reproduction.
-- [ ] Correctly polish and test `source/control_initialization.py`:
+- [x] Correctly polish and test `source/control_initialization.py`:
   - the 150-ns waveform must reproduce the original ramp / hold / return;
   - use names in phase units (`idle_phase`), a floating output array, and
     clear validation of the timing fractions;
   - retain the duration-scaled form as an explicitly named new variant, not
     an unlabelled claim of exact legacy compatibility at other durations.
-- [ ] Add a least-squares projection from target external phase to the
+- [x] Add a least-squares projection from target external phase to the
       `k=1..40` flux sine basis. Keep this pure pulse-to-coefficients logic in
       `control_initialization.py`; do not store or mutate CMA-ES weights in
       the simulator.
-- [ ] Add focused tests for pulse endpoints, the `pi/2` hold, and projection
-      reconstruction error on the reference time grid.
-- [ ] Set and document the reference configuration's interaction point as the
+- [x] Add focused tests for the 150-ns pulse endpoints / `pi/2` hold and exact
+      recovery of a phase waveform already in the chosen sine basis.
+- [x] Make initialization an explicit runner choice: `zero`, seeded `random`,
+      or `legacy_piecewise_lstsq`. The legacy scheme is restricted to the
+      150-ns fixed-charge reference protocol and is recorded in run metadata.
+- [x] Set and document the reference configuration's interaction point as the
       experimental `0.25 Phi_0`; keep the model-derived `0.253980967 Phi_0`
       for separate diagnostic/resonance studies.
 - [ ] Evaluate these controls under identical cutoff-20 reference settings:
@@ -34,8 +37,8 @@ items are ordered this way.
 
 ## Make experiments legible
 
-- [ ] Add initial-center provenance to run metadata: scheme name, source-run
-      path when relevant, and a hash of the initial coefficient vector.
+- [x] Record the initialization scheme and hash of the initial coefficient
+      vector in run metadata. Add a source-run path later for warm starts.
 - [ ] Define two named run tiers:
   - smoke: a fast software check (cutoff 8);
   - reference: physically comparable results (cutoff 20).
@@ -67,7 +70,8 @@ items are ordered this way.
 ## Communication / infrastructure
 
 - [ ] Follow up when OIT replies about intermittent Athene SSH access; then
-      submit the bounded SLURM smoke job and inspect its artifacts.
+      submit `jobs_to_send/reference_smoke_10min.slurm` and inspect its
+      artifacts. Submit the six-hour reference job only after that succeeds.
 - [ ] Bring the unit, decay-rate, experimental flux-point, and historical
       CMA-ES-bottleneck questions to Dr. Fu when you meet.
 - [ ] Ask Dr. Fu whether the original linear ramp/hold/return pulse encoded

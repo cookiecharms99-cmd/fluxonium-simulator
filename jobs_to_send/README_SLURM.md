@@ -25,7 +25,7 @@ available on the cluster, stop here and ask the cluster documentation or Dr.
 Fu's group how the project environment should be activated; do not silently
 switch to a different Python installation.
 
-## The prepared ten-minute job
+## The prepared ten-minute jobs
 
 `jobs_to_send/cmaes_10min.slurm` is prepared for the first larger smoke run:
 20 generations, population 16, and four worker processes for at most ten
@@ -53,6 +53,32 @@ Why these choices:
 
 The script deliberately does **not** use `--full-physics`; the default smoke
 configuration is cheaper and is the appropriate first time-limited run.
+
+`reference_smoke_10min.slurm` performs the equivalent smoke check for the
+fixed-charge, 40-flux-coefficient reference protocol. Submit it before the
+six-hour campaign:
+
+```bash
+sbatch jobs_to_send/reference_smoke_10min.slurm
+```
+
+## The six-hour reference campaign
+
+After `reference_smoke_10min.slurm` has produced complete artifacts, submit:
+
+```bash
+sbatch jobs_to_send/reference_6h_legacy.slurm
+```
+
+This uses cutoff 20, 500 time samples, 40 flux coefficients, the fixed
+calibrated charge drive, and the 150-ns professor-inspired pulse projected
+into the sine basis as the CMA-ES center. It requests four CPUs and runs up to
+six hours. `--generations 10000` is only an upper bound; SLURM supplies the
+real wall-clock limit and asks the runner to checkpoint 120 seconds before it.
+
+It is a single-seed reference campaign, not an initialization comparison.
+The laptop script `scripts/run_reference_initialization_compare.sh` runs the
+equal-budget zero/random/legacy-initialization comparison locally.
 
 ## Submit and monitor
 

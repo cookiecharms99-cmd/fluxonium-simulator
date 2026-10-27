@@ -2,7 +2,15 @@
 
 This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.99, while reducing the total reset time.
 
-The repository is presently in a physics-audit and simulator-refactor stage. CMA-ES is the established optimization baseline; reinforcement learning is being investigated as a possible later approach, especially if one trained policy can transfer across device conditions or support feedback.
+The repository has completed its first physics audit and simulator refactor.
+CMA-ES is the established optimization baseline; reinforcement learning is a
+later exploratory direction, especially if one trained policy can transfer
+across device conditions or support feedback. The active milestone is a
+professor-comparable fixed-charge, flux-only CMA-ES baseline.
+
+For the current implementation checkpoint and immediate next task, read
+[`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md). The active checklist is in
+[`TODO_TODAY.md`](TODO_TODAY.md).
 
 ## Physical protocol
 
@@ -53,6 +61,8 @@ The optimization objective is the final ground-state population
 | Path                                        | Purpose                                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `source/simulator.py`                       | Active refactored fluxonium-cavity simulator.                                                     |
+| `source/control_initialization.py`           | Physical pulse guesses and pulse-to-CMA-ES-coefficient initialization helpers.                   |
+| `PROJECT_HANDOFF.md`                         | Compact current-state handoff for the next collaboration session.                                 |
 | `source/optimization/cmaes.py`              | Reusable serial and multiprocessing CMA-ES machinery.                                             |
 | `source/old_sim.py`                         | Earlier project simulator retained for comparison.                                                |
 | `source/test.py`                            | Current simulator smoke test and timing script.                                                   |
@@ -61,7 +71,7 @@ The optimization objective is the final ground-state population
 | `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
 | `config/baseline_reset.json`                | Human-readable statement of the intended baseline model.                                          |
 | `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
-| `config/reference_prof.json`                | Reference config file to test compability with old code to check assumptions                      |
+| `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.   |
 | `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
 | `References/Research-Texts/`                | Papers and background reading, including the reinforcement-learning thesis.                       |
 | `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint.                                    |
@@ -101,6 +111,29 @@ uv run python main/run_cmaes.py
 
 Pass `--full-physics` only when the configured cutoff and time grid are intended.
 
+Run the fixed-charge, flux-only reference campaign with:
+
+```bash
+uv run main/run_cmaes.py \
+  --physics-config config/reference_prof.json \
+  --control-protocol reference \
+  --initialization legacy_piecewise_lstsq \
+  --generations 5 --popsize 4 --workers 2
+```
+
+Without `--full-physics`, either protocol uses the fast cutoff-8 smoke settings.
+Reference mode optimizes 40 flux coefficients and keeps the calibrated charge
+drive fixed; joint mode remains an exploratory flux-plus-charge protocol.
+Choose the CMA-ES center explicitly with `--initialization zero`, `random`, or
+`legacy_piecewise_lstsq`; the legacy projected waveform is defined only for
+the 150-ns reference protocol.
+
+For Athene, submit `jobs_to_send/reference_smoke_10min.slurm` first. After it
+finishes with complete artifacts, `jobs_to_send/reference_6h_legacy.slurm`
+launches the bounded six-hour full-physics reference campaign. The local
+equal-budget initialization comparison is
+`scripts/run_reference_initialization_compare.sh`.
+
 ## Current findings
 
 - At half flux, the audited static model gives ($g\to e\approx0.697075$) GHz and ($e\to f\approx4.323951$) GHz.
@@ -108,6 +141,10 @@ Pass `--full-physics` only when the configured cutoff and time grid are intended
 - At ($0.25,\Phi_0$), the bare ($g\to f$) transition is about 31.23 MHz detuned from the configured cavity frequency.
 - The coupled spectrum shows the expected avoided crossing between the states dominated by ($|f,0\rangle$) and ($|g,1\rangle$).
 - Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed.
+- The reference CMA-ES execution path supports serial and multiprocessing
+  evaluation, checkpointed controls, and fresh-simulator reproduction. It has
+  passed a cutoff-8 smoke run; cutoff-20 scientific baseline scores are still
+  pending.
 
 See the analysis in `playzone/fluxonium_audit.py`. Run this from root
 
@@ -124,9 +161,11 @@ The following must be resolved or validated before numerical optimization result
 - Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance.
 - Run cutoff-convergence checks at fluxonium cutoffs 20, 25, and 30.
 - Validate the one-photon cavity truncation dynamically.
-- Establish a reproducible professor-code CMA-ES baseline, including seed, runtime, evaluation count, best final population, and saved pulse.
+- Establish cutoff-20 reference scores for zero coefficients, the direct
+  intuitive pulse, its 40-sine reconstruction, and then equal-budget CMA-ES
+  runs from declared initial centers.
 - Benchmark simulators using identical physics, controls, time grids, solver settings, and timing boundaries.
-- Give the flux and charge controls independent sine bases beginning at harmonic \(k=1\).
+- Record the source and hash of every CMA-ES initial coefficient vector.
 
 ## Optimization plan
 
