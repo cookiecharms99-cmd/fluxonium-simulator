@@ -15,8 +15,8 @@ set -euo pipefail
 
 
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$PROJECT_ROOT"
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$HOME/fluxonium-simulator}"
+cd "$PROJECT_ROOT
 
 echo "Current directory on compute node: $(pwd)"
 ls -ld main/run_cmaes.py

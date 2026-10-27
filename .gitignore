@@ -17,6 +17,10 @@ __pycache__/
 *.csv
 
 
+# Ignore cluster logs for now
+*.out
+*.err
+
 # Generated plots
 *.png
 *.jpg
