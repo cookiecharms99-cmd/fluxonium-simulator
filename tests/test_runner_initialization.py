@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from main.run_cmaes import DEFAULT_DURATION, fill_initial_weights
+from main.run_cmaes import (
+    DEFAULT_DURATION,
+    evaluate_protocol_center,
+    fill_initial_weights,
+)
 from source.simulator import sine_basis
 
 
@@ -15,6 +19,12 @@ class TinyReferenceSimulator:
     n_controls = 6
     n_flux_controls = 4
     idle_phase = np.pi
+
+    def final_ground_population(self, weights, times) -> float:
+        return 0.11
+
+    def reference_final_ground_population(self, weights, times) -> float:
+        return 0.22
 
 
 def test_runner_builds_piecewise_projected_reference_center() -> None:
@@ -69,6 +79,15 @@ def test_runner_rejects_wrong_protocol_vector_length() -> None:
             times=np.linspace(0.0, DEFAULT_DURATION, 11),
             initial_weights=np.zeros(TinyReferenceSimulator.n_controls),
         )
+
+
+def test_runner_evaluates_the_center_through_the_selected_protocol() -> None:
+    simulator = TinyReferenceSimulator()
+    weights = np.zeros(simulator.n_flux_controls)
+    times = np.linspace(0.0, DEFAULT_DURATION, 11)
+
+    assert evaluate_protocol_center(simulator, "joint", weights, times) == 0.11
+    assert evaluate_protocol_center(simulator, "reference", weights, times) == 0.22
 
 
 def test_runner_warm_start_copies_compatible_weights(tmp_path) -> None:

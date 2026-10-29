@@ -17,6 +17,12 @@ This is the short working list. `ROADMAP.md` holds the longer research order;
 - [x] Add per-generation provisional summaries, dedicated cluster logs, and a
       reusable run plotter.
 - [x] Clean obvious stale scripts and repair the time-grid/control-basis API.
+- [x] Run two exploratory overnight campaigns: - 140-ns fixed-charge continuation from the saved 150-ns reference;
+      checkpoint best `P(g,0) = 0.99599465` after 1,141 generations.
+      The process later hit a filesystem I/O error while writing, not a
+      physics/optimizer failure. - six-hour random-start joint-control exploration; it plateaued at
+      `P(g,0) = 0.54785729` after 493 generations. This is one exploratory
+      60-parameter search, not evidence that joint control is unphysical.
 
 ## First: restore a runnable, explicit CMA-ES configuration
 
@@ -38,12 +44,37 @@ This is the short working list. `ROADMAP.md` holds the longer research order;
 - [x] **Jonathan + AI:** Generalize flux-pulse least-squares projection so it
       can initialize both control protocols: project the flux part, then place
       it in the flux slice of a full joint-control vector when needed.
-- [ ] **Jonathan + AI:** Implement one explicit warm-start scheme: reconstruct
-      the successful 150-ns pulse on normalized time `t/T`, resample it at a
-      shorter duration, project onto that duration's sine basis, and record
-      parent run, source duration, and child duration in metadata.
-- [ ] Compare the warm start against zero initialization at the same shorter
-      duration, seed policy, cutoff, evaluation budget, and wall-clock budget.
+- [x] **Jonathan + AI:** Implement a first duration warm start by copying a
+      compatible 40-coefficient flux vector. For the sine basis
+      `sin(pi*k*t/T)`, this exactly preserves the pulse as a function of
+      normalized time `t/T`; it is already the desired time-compressed start.
+- [x] **AI:** Record `initial_center_population` before the first CMA-ES
+      generation. Generation-one history contains sampled candidates, so it
+      cannot diagnose the quality of a warm-start center.
+- [x] **Jonathan + AI:** Fresh-reproduce the 140-ns checkpointed best pulse
+      with a new simulator. It exactly reproduces `P(g,0) = 0.995994653948`
+      at cutoff 20 (zero observed delta from the checkpointed reward).
+- [x] **Jonathan + AI:** Audit the reproduced 140-ns pulse at higher cutoffs.
+      It gives `0.99599465` at cutoff 20 and `0.99598598` at cutoff 40, a
+      difference of about `8.67e-6`; cutoff 20 is therefore again trustworthy
+      at roughly `1e-5` resolution for this saved pulse.
+- [ ] **Jonathan + AI:** Compare the 140-ns warm start against zero
+      initialization with the same cutoff, seed policy, population, evaluation
+      budget, and wall-clock budget. Only then decide whether continuation is
+      helping and whether to attempt 130 ns
+- [ ] **Later, if control dimensions or bases differ:** add a separate
+      sampled-control resample-and-project warm-start transfer. Do not use it
+      for the current same-40-sine-basis duration change, where direct copying
+      is mathematically exact.
+
+## Parked: joint-control exploration
+
+- [ ] Do not rerun the same random-start 60-parameter joint search yet. First
+      decide whether the optimized charge waveform should _replace_ the
+      calibrated charge tone or be a bounded correction/envelope around it.
+- [ ] If joint control resumes, define independent flux/charge coefficient
+      scales, a physically motivated initial center, and a fair comparison
+      against the fixed-charge baseline before interpreting its score.
 
 ## Experiment records and project hygiene
 

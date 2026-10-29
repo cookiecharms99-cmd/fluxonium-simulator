@@ -2,6 +2,7 @@
 Mission! Verify that the reported fidelity is mostly good and isn't a cutoff error
 """
 
+import argparse
 import copy
 import csv
 import json
@@ -40,7 +41,7 @@ def resolve_run_directory(value: str) -> Path:
     )
 
 
-RUN_NAME = "reference_6h_legacy_4776599"
+RUN_NAME = input("enter a folder for the data: ")
 
 RUN_DIRECTORY = resolve_run_directory(RUN_NAME)
 

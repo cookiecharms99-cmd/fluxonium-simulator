@@ -68,6 +68,20 @@ def make_smoke_config(physics_config: dict) -> dict:
     return smoke_config
 
 
+def evaluate_protocol_center(
+    simulator: FluxoniumResetSimulator,
+    control_protocol: str,
+    weights: np.ndarray,
+    times: np.ndarray,
+) -> float:
+    """Evaluate the declared CMA-ES center before population sampling begins."""
+    if control_protocol == "joint":
+        return simulator.final_ground_population(weights, times)
+    if control_protocol == "reference":
+        return simulator.reference_final_ground_population(weights, times)
+    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
+
+
 def fill_initial_weights(
     simulator: FluxoniumResetSimulator,
     initialization: str,
@@ -281,11 +295,16 @@ def main() -> None:
     metadata["initial_weights_sha256"] = sha256_file(
         output_path / "initial_weights.npy"
     )
-    write_json(output_path / "metadata.json", metadata)
 
     termination_requested = False
     start = perf_counter()
     latest_progress: CMAESProgress | None = None
+    initial_center_population = evaluate_protocol_center(
+        simulator, args.control_protocol, initial_weights, times
+    )
+    metadata["initial_center_population"] = initial_center_population
+    write_json(output_path / "metadata.json", metadata)
+    print(f"Initial center P(g, 0): {initial_center_population:.6f}")
 
     def checkpoint_artifact_hashes() -> dict[str, str]:
         """Fingerprint artifacts that exist at a completed-generation boundary."""
@@ -310,6 +329,7 @@ def main() -> None:
             "best_final_ground_population": (
                 None if progress is None else progress.best_reward
             ),
+            "initial_center_population": initial_center_population,
             "elapsed_seconds": perf_counter() - start,
             "completed_generations": completed_generations,
             "requested_generations": args.generations,
@@ -379,6 +399,7 @@ def main() -> None:
             "status": "completed" if result.completed else "stopped",
             "stop_reason": result.stop_reason,
             "best_final_ground_population": result.best_reward,
+            "initial_center_population": initial_center_population,
             "elapsed_seconds": elapsed,
             "completed_generations": len(result.history),
             "requested_generations": args.generations,
@@ -446,6 +467,7 @@ def main() -> None:
                 "best_final_ground_population": (
                     None if latest_progress is None else latest_progress.best_reward
                 ),
+                "initial_center_population": initial_center_population,
                 "elapsed_seconds": perf_counter() - start,
                 "completed_generations": (
                     0 if latest_progress is None else len(latest_progress.history)
