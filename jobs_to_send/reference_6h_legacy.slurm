@@ -6,8 +6,8 @@
 #SBATCH --mem=8G
 #SBATCH --time=06:00:00
 #SBATCH --signal=TERM@120
-#SBATCH --output=slurm-reference-legacy-%j.out
-#SBATCH --error=slurm-reference-legacy-%j.err
+#SBATCH --output=cluster_logs/slurm-reference-legacy-%j.out
+#SBATCH --error=cluster_logs/slurm-reference-legacy-%j.err
 
 # This is a bounded, full-physics reference campaign. Its large generation
 # count is an upper limit; SLURM's six-hour wall time requests a clean

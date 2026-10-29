@@ -91,7 +91,7 @@ squeue -u "$USER"
 SLURM will print a job ID after `sbatch`. Watch its standard-output log with:
 
 ```bash
-tail -f slurm-<JOB_ID>.out
+tail -f cluster_logs/slurm-<JOB_ID>.out
 ```
 
 If needed, cancel a queued or running job:
@@ -105,7 +105,7 @@ scancel <JOB_ID>
 Check both the log and the run directory:
 
 ```bash
-cat slurm-<JOB_ID>.out
+cat cluster_logs/slurm-<JOB_ID>.out
 cat data/output/cmaes/10min_<JOB_ID>/summary.json
 ```
 
@@ -120,12 +120,18 @@ metadata.json
 summary.json
 ```
 
-`summary.json` should have either `"status": "completed"`, with a
+`summary.json` is written at startup and again after every fully completed
+generation. During an active run it has `"status": "running"` and reports
+the best fully completed generation so far. At a graceful finish it has either
+`"status": "completed"`, with a
 `fresh_reproduction_population` matching the recorded best final population,
 or `"status": "stopped"`. A stopped result still preserves the best fully
 completed generation: `best_weights.npy`, `controls.npz`, and `history.csv`.
 It cannot preserve an individual candidate evaluation that SLURM kills midway
 through its solver call.
+
+The `cluster_logs/` directory must already exist in the repository before
+submitting: SLURM opens the requested log file before it runs the script body.
 
 ## SLURM versus Bash
 

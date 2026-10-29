@@ -15,11 +15,9 @@ __pycache__/
 *.npy
 *.npz
 *.csv
+# decide to ignore outputs altogether for now but change in future maybe
+output/
 
-
-# Ignore cluster logs for now
-*.out
-*.err
 
 # Generated plots
 *.png
@@ -32,7 +30,7 @@ __pycache__/
 
 # Private
 Notes/
-output/
+
 References/
 
 # Jupyter notebook checkpoints
@@ -40,3 +38,15 @@ References/
 
 # Generated editor files (if not needed in Git)
 playzone/__marimo__/
+
+# Local Scratchworks
+local_strach/
+cluster_scratch/
+
+
+# Cluster logs
+# Ignore cluster logs for now
+*.out
+*.err
+cluster_logs/*.err
+cluster_logs/*.out

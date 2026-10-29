@@ -60,7 +60,6 @@ def parameter_count(
         return simulator.n_controls
     if control_protocol == "reference":
         return simulator.n_flux_controls
-    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
 
 
 def evaluate_candidate(
@@ -76,7 +75,6 @@ def evaluate_candidate(
         return simulator.reference_final_ground_population(
             flux_weights=candidate, times=times
         )
-    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
 
 
 def initialize_worker(

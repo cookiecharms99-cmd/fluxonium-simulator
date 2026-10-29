@@ -16,14 +16,41 @@ def phase_from_flux(flux_quanta: float | np.ndarray) -> float | np.ndarray:
     return 2.0 * np.pi * flux_quanta
 
 
-def sine_basis(times: np.ndarray, duration: float, count: int) -> np.ndarray:
+def sine_basis(times: np.ndarray, count: int) -> np.ndarray:
     """Return sin(k pi t / T), k=1..count; all functions vanish at endpoints."""
+    duration = times[-1]
     if count < 0:
         raise ValueError("The number of control coefficients cannot be negative.")
     if count == 0:
         return np.empty((0, len(times)))
     k = np.arange(1, count + 1, dtype=float)[:, None]
     return np.sin(np.pi * k * times / duration)
+
+
+def validate_protocol_times(times: np.ndarray) -> np.ndarray:
+    """Validate the simulator's standalone control-clock convention.
+
+    Controls describe one protocol beginning at ``0 ns`` and ending at its
+    duration. Accepting an arbitrary offset would make the charge carrier's
+    phase depend on an implicit, unexplained laboratory clock.
+    """
+    time_array = np.asarray(times, dtype=float)
+    if time_array.ndim != 1 or len(time_array) < 2:
+        raise ValueError(
+            "times must be a one-dimensional array with at least two samples."
+        )
+    if not np.all(np.isfinite(time_array)):
+        raise ValueError("times must contain only finite values.")
+    if not np.isclose(time_array[0], 0.0, rtol=0.0, atol=1e-12):
+        raise ValueError(
+            "times must start at 0 ns for this standalone control protocol."
+        )
+    if not np.all(np.diff(time_array) > 0.0):
+        raise ValueError("times must be strictly increasing.")
+    duration = float(time_array[-1])
+    if duration <= 0.0:
+        raise ValueError("times must end at a positive duration.")
+    return time_array
 
 
 @dataclass(frozen=True)
@@ -106,7 +133,6 @@ class FluxoniumResetSimulator:
         sin_f = sp.csr_matrix(reference.sin_phi_operator())
 
         # a_c = [[0, 1], [0, 0]], sigma_y = [[0, -1j], [1j, 0]]
-        a_c = sp.csr_matrix(([1.0], ([0], [1])), shape=(2, 2))
         sigmay = sp.csr_matrix([[0, -1j], [1j, 0]], dtype=complex)
 
         # Precompute tensor products as Qobjs for mesolve
@@ -120,6 +146,7 @@ class FluxoniumResetSimulator:
         h_LC_sparse = sp.diags(self.physics["omega_lc"] * levels, 0, format="csr")
 
         # Cavity term: frequency * (I_flux @ n_c) where n_c = a_c.dag @ a_c = [[0, 0], [0, 1]]
+        # Cookie note: Why is line above like that? I really thought it was a_c
         n_c = sp.csr_matrix(([1.0], ([1], [1])), shape=(2, 2))
         h_cavity_sparse = self.physics["cavity"]["frequency"] * sp.kron(
             I_flux, n_c, format="csr"
@@ -179,19 +206,13 @@ class FluxoniumResetSimulator:
             raise ValueError(
                 f"Expected {self.n_controls} weights, got {weights.shape}."
             )
-        duration = times[-1]
-
-        # Erm idk if this error handling is needed lol, commented out for now to save my nanoseconds :3
-        if times.ndim != 1 or len(times) < 2:
-            raise ValueError(
-                "times must be a one-dimensional array with at least two samples."
-            )
+        times = validate_protocol_times(times)
 
         # Flux and charge bases share a time grid but have independent harmonic
-        # counts. Rebuild both whenever that relative grid changes.
+        # counts. Rebuild both whenever that exact grid changes.
         if self._times is None or not np.array_equal(times, self._times):
-            self._flux_basis = sine_basis(times, duration, self.n_flux_controls)
-            self._charge_basis = sine_basis(times, duration, self.n_charge_controls)
+            self._flux_basis = sine_basis(times, self.n_flux_controls)
+            self._charge_basis = sine_basis(times, self.n_charge_controls)
             self._times = times.copy()
 
         flux_control = (
@@ -208,18 +229,6 @@ class FluxoniumResetSimulator:
             external_phase=flux_control, charge_drive=charge_control
         )
 
-    def flux_pulse_to_weights(pulse: np.ndarray):
-        """
-        Update weights vector with taking in a pulse array, either DST or interpolation to a new weights based off of current basis.
-        """
-        pass
-
-    def charge_pulse_to_weights():
-        """
-        Update weights vector with taking in a pulse array, either DST or interpolation to a new weights based off of current basis.
-        """
-        pass
-
     def reference_controls(
         self, flux_weights: Sequence[float], times: np.ndarray
     ) -> ControlWaveforms:
@@ -229,14 +238,12 @@ class FluxoniumResetSimulator:
             raise ValueError(
                 f"Expected {self.n_flux_controls} weights, got {flux_weights.shape}."
             )
-        duration = times[-1]
+        times = validate_protocol_times(times)
 
         if self._reference_times is None or not np.array_equal(
             times, self._reference_times
         ):
-            self._reference_flux_basis = sine_basis(
-                times, duration, self.n_flux_controls
-            )
+            self._reference_flux_basis = sine_basis(times, self.n_flux_controls)
             self._reference_times = times.copy()
 
         flux_control = (
@@ -325,6 +332,15 @@ class FluxoniumResetSimulator:
         """Return the final P(g, 0) at the idle bias; the reset objective."""
         result = self.evolve(weights, times, e_ops=[self.ground_projector])
         return float(np.real(result.expect[0][-1]))
+
+    def ground_population(
+        self, weights: Sequence[float], times: np.ndarray
+    ) -> np.ndarray:
+        """
+        Return P(g,0)[t] at the idle basis, for experimenting
+        """
+        result = self.evolve(weights, times, e_ops=[self.ground_projector])
+        return np.real(result.expect[0])
 
     def reference_final_ground_population(
         self, flux_weights: Sequence[float], times: np.ndarray

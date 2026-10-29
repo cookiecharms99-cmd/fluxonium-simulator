@@ -29,7 +29,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import source.control_initialization as control_init
-from source.optimization.cmaes import CMAESProgress, run_cmaes  # noqa: E402
+from source.optimization.cmaes import (  # noqa: E402
+    CMAESProgress,
+    parameter_count,
+    run_cmaes,
+)
 from source.run_artifacts import (  # noqa: E402
     create_run_directory,
     environment_snapshot,
@@ -47,8 +51,6 @@ from source.simulator import (
 
 # Define uh.... macros? :3 -----------------------------
 DEFAULT_DURATION = 150.0
-
-
 # -----------------------------------
 
 
@@ -64,6 +66,67 @@ def make_smoke_config(physics_config: dict) -> dict:
     smoke_config["model_settings"]["cutoff"] = 8
     smoke_config["model_settings"]["num_t_steps"] = 250
     return smoke_config
+
+
+def fill_initial_weights(
+    simulator: FluxoniumResetSimulator,
+    initialization: str,
+    control_protocol: str,
+    seed: int,
+    times: np.ndarray,
+    initial_weights: np.ndarray,
+    warm_start_path: str | Path | None = None,
+) -> None:
+    """Fill a protocol-sized CMA-ES center using one declared scheme.
+
+    Reference mode always has a flux-only candidate vector. It may still use
+    a physics config that declares joint-control charge harmonics: those are
+    intentionally ignored because reference mode supplies its fixed charge
+    drive instead.
+    """
+    expected_count = parameter_count(simulator, control_protocol)
+    if initial_weights.shape != (expected_count,):
+        raise ValueError(
+            f"Expected {expected_count} initial weights for {control_protocol!r} "
+            f"protocol, got {initial_weights.shape}."
+        )
+    if initialization == "zero":
+        initial_weights.fill(0.0)
+    elif initialization == "random":
+        initial_weights[:] = np.random.default_rng(seed).normal(
+            0.0, 0.1, size=expected_count
+        )
+    elif initialization == "piecewise_lstsq":
+        initial_flux_pulse = control_init.piecewise_pulse_init(times=times)
+        flux_basis = sine_basis(times=times, count=simulator.n_flux_controls)
+        initial_weights[: simulator.n_flux_controls] = (
+            control_init.lst_sq_projection_flux(
+                pulse=initial_flux_pulse,
+                basis_arr=flux_basis,
+                idle_phase=simulator.idle_phase,
+            )
+        )
+    elif initialization == "warm_start":
+        if warm_start_path is None:
+            raise ValueError(
+                "--warm-start is required when --initialization warm_start is selected."
+            )
+        source_path = Path(warm_start_path)
+        if not source_path.is_file():
+            raise FileNotFoundError(
+                f"Warm-start weights file does not exist: {source_path}"
+            )
+        source_weights = np.asarray(np.load(source_path, allow_pickle=False), dtype=float)
+        if source_weights.shape != initial_weights.shape:
+            raise ValueError(
+                "Warm-start weight shape does not match the selected control "
+                f"protocol: source {source_weights.shape}, expected "
+                f"{initial_weights.shape}. Projection between bases is not yet "
+                "implemented."
+            )
+        initial_weights[:] = source_weights
+    else:
+        raise ValueError(f"Unknown initialization scheme: {initialization!r}.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,9 +149,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="joint",
         help="Joint flux/charge optimization or the fixed-charge flux-only reference.",
     )
+
     parser.add_argument(
         "--initialization",
-        choices=("zero", "random", "legacy_piecewise_lstsq"),
+        choices=("zero", "random", "piecewise_lstsq", "warm_start"),
         default="random",
         help=(
             "CMA-ES center: zero coefficients, seeded random coefficients, or "
@@ -110,7 +174,27 @@ def build_parser() -> argparse.ArgumentParser:
             "data/output/cmaes/."
         ),
     )
+    parser.add_argument(
+        "--sigma0",
+        type=float,
+        default=0.3,
+        help=("Provide the initial std dev of the dist for cmaes :3"),
+    )
+    parser.add_argument(
+        "--warm-start",
+        type=str,
+        default=None,
+        help=(
+            "Path to compatible .npy warm-start weights. Required only when "
+            "--initialization warm_start is selected; basis projection is not "
+            "yet supported."
+        ),
+    )
     return parser
+
+
+# signal exit handling
+#
 
 
 # --------------------------------------------------------------
@@ -121,49 +205,27 @@ def main() -> None:
     physics_path = Path(args.physics_config)
     if not physics_path.is_absolute():
         physics_path = PROJECT_ROOT / physics_path
-    optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
+    # optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
+
     physics_config = load_json(physics_path)
-    optimizer_config = load_json(optimizer_path)
+    # optimizer_config = load_json(optimizer_path)
     if not args.full_physics:
         physics_config = make_smoke_config(physics_config)
 
     simulator = FluxoniumResetSimulator(physics_config)
     num_steps = int(physics_config["model_settings"]["num_t_steps"])
     times = np.linspace(0.0, args.duration, num_steps)
-    coefficient_count = (
-        simulator.n_controls
-        if args.control_protocol == "joint"
-        else simulator.n_flux_controls
+    coefficient_count = parameter_count(simulator, args.control_protocol)
+    initial_weights = np.zeros(coefficient_count)
+    fill_initial_weights(
+        initialization=args.initialization,
+        control_protocol=args.control_protocol,
+        seed=args.seed,
+        simulator=simulator,
+        times=times,
+        initial_weights=initial_weights,
+        warm_start_path=args.warm_start,
     )
-
-    if args.initialization == "zero":
-        initial_weights = np.zeros(coefficient_count)
-    elif args.initialization == "random":
-        initial_weights = np.random.default_rng(args.seed).normal(
-            0.0, 0.1, size=coefficient_count
-        )
-    else:
-        if args.control_protocol != "reference":
-            raise ValueError(
-                "legacy_piecewise_lstsq is currently defined only for the "
-                "fixed-charge reference protocol."
-            )
-        if not np.isclose(args.duration, DEFAULT_DURATION):
-            raise ValueError(
-                "legacy_piecewise_lstsq exactly represents the professor's "
-                f"{DEFAULT_DURATION:g}-ns schedule; choose duration {DEFAULT_DURATION:g}."
-            )
-        initial_flux_pulse = control_init.piecewise_pulse_init(
-            times=times, duration=args.duration
-        )
-        flux_basis = sine_basis(
-            times=times, duration=args.duration, count=simulator.n_flux_controls
-        )
-        initial_weights = control_init.lst_sq_projection_flux(
-            pulse=initial_flux_pulse,
-            basis_arr=flux_basis,
-            idle_phase=simulator.idle_phase,
-        )
 
     output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
     mode = "full configured physics" if args.full_physics else "smoke physics"
@@ -190,17 +252,25 @@ def main() -> None:
         "command": sys.argv,
         "mode": "full" if args.full_physics else "smoke",
         "physics_config": physics_config,
-        "optimizer_config": optimizer_config,
+        "optimizer_config": "Currently deprecated",
         "run_parameters": {
             "generations": args.generations,
             "population_size": args.popsize,
             "workers": args.workers,
             "seed": args.seed,
-            "sigma0": float(optimizer_config["sigma0"]),
+            "sigma0": float(args.sigma0),
             "duration_ns": args.duration,
             "time_steps": num_steps,
             "control_protocol": args.control_protocol,
             "initialization_scheme": args.initialization,
+            "warm_start_weights_path": (
+                args.warm_start if args.initialization == "warm_start" else None
+            ),
+            "warm_start_transfer": (
+                "direct_compatible_weight_copy"
+                if args.initialization == "warm_start"
+                else None
+            ),
             "physics_config_path": str(physics_path.relative_to(PROJECT_ROOT)),
             "initial_weight_count": coefficient_count,
         },
@@ -214,6 +284,48 @@ def main() -> None:
     write_json(output_path / "metadata.json", metadata)
 
     termination_requested = False
+    start = perf_counter()
+    latest_progress: CMAESProgress | None = None
+
+    def checkpoint_artifact_hashes() -> dict[str, str]:
+        """Fingerprint artifacts that exist at a completed-generation boundary."""
+        names = [
+            "initial_weights.npy",
+            "best_weights.npy",
+            "history.csv",
+            "controls.npz",
+        ]
+        return {
+            name: sha256_file(output_path / name)
+            for name in names
+            if (output_path / name).is_file()
+        }
+
+    def write_provisional_summary(progress: CMAESProgress | None) -> None:
+        """Record inspectable best-so-far state without claiming a final result."""
+        completed_generations = 0 if progress is None else len(progress.history)
+        summary = {
+            "status": "running",
+            "stop_reason": None,
+            "best_final_ground_population": (
+                None if progress is None else progress.best_reward
+            ),
+            "elapsed_seconds": perf_counter() - start,
+            "completed_generations": completed_generations,
+            "requested_generations": args.generations,
+            "objective_evaluations": (
+                0 if progress is None else progress.evaluation_count
+            ),
+            "duration_ns": args.duration,
+            "fresh_reproduction_population": None,
+            "reproduction_delta": None,
+            "artifacts_sha256": checkpoint_artifact_hashes(),
+        }
+        write_json(output_path / "summary.json", summary)
+
+    # If a job ends before its first complete generation, this still explains
+    # the run directory rather than leaving it without a summary at all.
+    write_provisional_summary(None)
 
     def request_termination(_signal_number, _frame) -> None:
         nonlocal termination_requested
@@ -228,6 +340,8 @@ def main() -> None:
 
     def save_checkpoint(progress: CMAESProgress) -> None:
         """Persist the newest fully completed generation before starting another."""
+        nonlocal latest_progress
+        latest_progress = progress
         np.save(output_path / "best_weights.npy", progress.best_weights)
         save_history(output_path / "history.csv", progress.history)
         save_controls(
@@ -242,8 +356,8 @@ def main() -> None:
         metadata["completed_generations"] = len(progress.history)
         metadata["completed_objective_evaluations"] = progress.evaluation_count
         write_json(output_path / "metadata.json", metadata)
+        write_provisional_summary(progress)
 
-    start = perf_counter()
     try:
         result = run_cmaes(
             simulator,
@@ -251,7 +365,7 @@ def main() -> None:
             times,
             generations=args.generations,
             population_size=args.popsize,
-            sigma0=float(optimizer_config["sigma0"]),
+            sigma0=args.sigma0,
             seed=args.seed,
             workers=args.workers,
             control_protocol=args.control_protocol,
@@ -266,7 +380,10 @@ def main() -> None:
             "stop_reason": result.stop_reason,
             "best_final_ground_population": result.best_reward,
             "elapsed_seconds": elapsed,
+            "completed_generations": len(result.history),
+            "requested_generations": args.generations,
             "objective_evaluations": result.evaluation_count,
+            "duration_ns": args.duration,
             "artifacts_sha256": {
                 name: sha256_file(output_path / name)
                 for name in [
@@ -302,7 +419,9 @@ def main() -> None:
                 )
             summary["fresh_reproduction_population"] = reproduced_reward
             summary["reproduction_delta"] = reproduction_delta
-
+        else:
+            summary["fresh_reproduction_population"] = None
+            summary["reproduction_delta"] = None
         metadata["status"] = summary["status"]
         write_json(output_path / "metadata.json", metadata)
         write_json(output_path / "summary.json", summary)
@@ -319,6 +438,28 @@ def main() -> None:
         metadata["status"] = "failed"
         metadata["failure"] = f"{type(error).__name__}: {error}"
         write_json(output_path / "metadata.json", metadata)
+        write_json(
+            output_path / "summary.json",
+            {
+                "status": "failed",
+                "stop_reason": f"{type(error).__name__}: {error}",
+                "best_final_ground_population": (
+                    None if latest_progress is None else latest_progress.best_reward
+                ),
+                "elapsed_seconds": perf_counter() - start,
+                "completed_generations": (
+                    0 if latest_progress is None else len(latest_progress.history)
+                ),
+                "requested_generations": args.generations,
+                "objective_evaluations": (
+                    0 if latest_progress is None else latest_progress.evaluation_count
+                ),
+                "duration_ns": args.duration,
+                "fresh_reproduction_population": None,
+                "reproduction_delta": None,
+                "artifacts_sha256": checkpoint_artifact_hashes(),
+            },
+        )
         raise
     finally:
         signal.signal(signal.SIGTERM, previous_sigterm_handler)

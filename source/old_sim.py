@@ -1,3 +1,9 @@
+"""
+Old simulator for reference.
+Currently does not run due to dependency on now deleted config file. That's ok :D
+
+"""
+
 import math
 
 import numpy as np

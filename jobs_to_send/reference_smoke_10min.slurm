@@ -6,8 +6,8 @@
 #SBATCH --mem=4G
 #SBATCH --time=00:10:00
 #SBATCH --signal=TERM@60
-#SBATCH --output=slurm-reference-smoke-%j.out
-#SBATCH --error=slurm-reference-smoke-%j.err
+#SBATCH --output=cluster_logs/slurm-reference-smoke-%j.out
+#SBATCH --error=cluster_logs/slurm-reference-smoke-%j.err
 
 # Validate the reference protocol, multiprocessing, artifact creation, and
 # cluster environment before submitting the six-hour scientific campaign.

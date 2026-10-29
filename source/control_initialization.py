@@ -1,9 +1,13 @@
+"""
+Here we manage the initialization of control vectors for starting.
+For now, only a fresh start. Perhaps a more artifact-y util handles 'warm starts'.
+"""
+
 import numpy as np
 
 
 def piecewise_pulse_init(
     times: np.ndarray,
-    duration: float,
     stop1_pct: float = 10 / 150.0,
     stop2_pct: float = 110 / 150.0,
     idle_flux=np.pi,
@@ -20,6 +24,8 @@ def piecewise_pulse_init(
         or (stop2_pct <= 0)
     ):
         raise ValueError("Stops must be in order and must be in (0,1) :3")
+
+    duration = times[-1]
     stop1 = stop1_pct * duration
     stop2 = stop2_pct * duration
     pulse = np.empty_like(times, dtype=float)
@@ -54,9 +60,7 @@ def lst_sq_projection_flux(pulse: np.ndarray, basis_arr: np.ndarray, idle_phase=
     pulse_shifted = pulse - idle_phase
     # it says np lstsq solves Ax = b, but i have xB = p, solving for x.
     # I can maybe do umm... solving B.T x.T = p.T -> x,_,_,_ = solve(B.T, p.T), ret x.T? Sure!
-    weights_guess, _, _, _ = np.linalg.lstsq(
-        basis_arr.T, pulse_shifted, rcond=None
-    )
+    weights_guess, _, _, _ = np.linalg.lstsq(basis_arr.T, pulse_shifted, rcond=None)
     return weights_guess
 
 
@@ -66,12 +70,12 @@ if __name__ == "__main__":
 
     times = np.linspace(0, 150, 500)
     duration = times[-1]
-    pulse = piecewise_pulse_init(times, duration=150)
+    pulse = piecewise_pulse_init(times)
     idle_phase = np.pi
 
     # Now we will see how well least squares reconstructs pulse, using a blunt verison to make things visible!
-    flux_basis_blunt = sine_basis(times, duration, count=7)
-    flux_basis_fine = sine_basis(times, duration, count=40)
+    flux_basis_blunt = sine_basis(times, count=7)
+    flux_basis_fine = sine_basis(times, count=40)
     weights_blunt = lst_sq_projection_flux(pulse, flux_basis_blunt)
     weights_fine = lst_sq_projection_flux(pulse, flux_basis_fine)
     approx_pulse_blunt = idle_phase + weights_blunt @ flux_basis_blunt

@@ -6,8 +6,8 @@
 #SBATCH --mem=2G
 #SBATCH --time=00:10:00
 #SBATCH --signal=TERM@60
-#SBATCH --output=slurm-%j.out
-#SBATCH --error=slurm-%j.err
+#SBATCH --output=cluster_logs/slurm-%j.out
+#SBATCH --error=cluster_logs/slurm-%j.err
 
 # Stop on an error, an unset variable, or a failed pipeline command.
 set -euo pipefail

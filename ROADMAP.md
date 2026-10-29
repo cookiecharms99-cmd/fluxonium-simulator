@@ -13,6 +13,10 @@ Completed:
 - Reproducible CMA-ES artifacts: configuration, seed, generation history,
   best coefficients, sampled controls, and fresh-run reproduction.
 - A checkpointing CMA-ES runner and a ten-minute, four-worker SLURM script.
+- A first equal-budget, single-seed initialization comparison at cutoff 20:
+  the projected legacy intuitive center reached about `0.893`, ahead of the
+  zero and random centers (about `0.744` and `0.753`). This is useful evidence,
+  not yet a multi-seed conclusion.
 - Independent `k=1...N` sine bases for flux and charge controls, with
   coefficient-length, endpoint, and duration-cache tests.
 - One long local cutoff-20 joint-control run that proved generation-level
@@ -29,6 +33,8 @@ Not yet established:
   result.
 - Confirmed units and provenance for the cavity-decay parameter.
 - A cluster result from Athene.
+- Validation of a reported approximately `0.995` long-run result; its complete
+  artifact has not yet been returned to the local project.
 
 ## Phase A — make the execution path trustworthy
 
@@ -40,11 +46,19 @@ inspectable artifacts even when a time limit ends the campaign.
 2. Resolve Athene access and verify its `uv` environment.
 3. Submit one bounded cluster smoke run; compare its artifact layout and result with
    the laptop run.
-4. Ensure interruption status and optimizer state are recorded clearly enough
-   to distinguish a clean finish, a time limit, and a manual stop.
-5. Only after several runs exist, add a command that scans their summaries
-   into a global `runs.csv`. Per-run folders remain the source of truth, which
-   avoids concurrent cluster jobs corrupting one shared CSV.
+4. Write a provisional checkpoint summary after every completed generation, so
+   a scheduler time limit cannot leave an otherwise useful run without a
+   readable best-so-far result. Mark it as provisional; only a final summary
+   may claim clean completion or fresh reproduction.
+5. Put SLURM stdout/stderr in an ignored `cluster_logs/` directory, with an
+   empty tracked placeholder. The directory must exist before `sbatch` because
+   SLURM opens log files before executing the script.
+6. Provide a run-inspection command that reads each run's exact metadata,
+   history, and sampled controls. SHA-256 fields are integrity fingerprints,
+   not a human-facing way to identify an experiment.
+7. Only after several runs exist, export a concise results table from the
+   per-run summaries. Per-run folders remain the source of truth, which avoids
+   concurrent cluster jobs corrupting one shared CSV.
 
 Success criterion: a result can be tied to a seed, configuration, code
 revision, runtime, evaluation count, saved pulse, and a fresh reproduction.
@@ -83,10 +97,14 @@ compute budget.
    least squares and evaluate the reconstruction.
 3. Compare declared initial-weight schemes one at a time and record their
    provenance and coefficient-vector hash in the run artifacts.
-4. Run several seeds at equal evaluation and wall-clock budgets.
-5. Compare final `P(g,0)`, duration, runtime, and pulse shapes—not just the
+4. Validate the reported `~0.995` reference result: restore its artifact,
+   fresh-reproduce the saved best candidate, inspect the control traces, and
+   check cutoff convergence. It clears the practical `0.99` reset milestone if
+   verified, but remains below the currently configured `0.999` target.
+5. Run several seeds at equal evaluation and wall-clock budgets.
+6. Compare final `P(g,0)`, duration, runtime, and pulse shapes—not just the
    single best reward.
-6. Diagnose whether limited wall time, CMA-ES settings, numerical precision,
+7. Diagnose whether limited wall time, CMA-ES settings, numerical precision,
    or the control parameterization is the bottleneck.
 
 Initial-weight ideas worth comparing one at a time:
@@ -104,11 +122,12 @@ the intuitive pulse and professor reference.
 Only change one scientific variable per experiment.
 
 1. **Duration continuation / warm starts.** Start with a solved longer pulse,
-   resample it onto a shorter interval, project it into that shorter interval's
+   resample it by normalized time `t/T` onto a shorter interval, project it into that shorter interval's
    sine basis, then use those coefficients as the CMA-ES center. Compare this
    directly against zero initialization at the same short duration and budget.
-   It may help, but it is not guaranteed: shortening changes both the pulse
-   bandwidth and the reachable dynamics.
+   Record the parent run and both durations. It may help, but it is not
+   guaranteed: shortening changes both the pulse bandwidth and the reachable
+   dynamics.
 2. **CMA-ES restart study.** Once the flux-only baseline and initialization
    comparison exist, compare ordinary CMA-ES against a declared restart rule
    (for example, no improvement for a fixed number of generations, with a
@@ -124,6 +143,11 @@ Only change one scientific variable per experiment.
 6. **Reinforcement learning.** Treat RL as exploratory. It earns its cost if
    it provides transfer, robustness, or feedback value—not merely one better
    fixed pulse under an unequal compute budget.
+7. **Campaign manager / meta-optimization.** Begin with an auditable
+   rule-based policy for low-cutoff exploration, high-cutoff validation, and
+   declared CMA-ES restart choices. Consider a learned manager only after the
+   run database contains enough comparable campaigns to define its state,
+   action, computational cost, and reward.
 
 ## Questions for Dr. Fu / the literature
 

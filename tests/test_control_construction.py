@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from source.simulator import FluxoniumResetSimulator
 
@@ -64,3 +65,17 @@ def test_basis_cache_refreshes_for_a_new_duration() -> None:
         float(params["physics"]["omega_ef"]) * short_times
     )
     np.testing.assert_allclose(short_controls.charge_drive, expected_drive)
+
+
+@pytest.mark.parametrize(
+    "times",
+    [
+        np.array([1.0, 2.0]),
+        np.array([0.0, 1.0, 1.0]),
+        np.array([0.0, np.nan]),
+    ],
+)
+def test_controls_reject_an_ambiguous_time_grid(times: np.ndarray) -> None:
+    """A pulse is defined in its own protocol clock, from 0 ns onward."""
+    with pytest.raises(ValueError):
+        simulator.controls(np.zeros(simulator.n_controls), times)
