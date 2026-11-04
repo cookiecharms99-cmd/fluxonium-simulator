@@ -1,0 +1,44 @@
+{
+  "construction": {
+    "max_seconds": 0.03985167101200204,
+    "median_seconds": 0.0275559479923686,
+    "min_seconds": 0.0181906529905973,
+    "samples_seconds": [
+      0.0181906529905973,
+      0.0275559479923686,
+      0.03985167101200204
+    ]
+  },
+  "control_protocol": "reference",
+  "cutoff": 20,
+  "duration_ns": 140.0,
+  "environment": {
+    "git_revision": "f56f63b407d32dfa7817a0f551e281367f7c74a0",
+    "platform": "Linux-6.19.8-surface-3-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]"
+  },
+  "fresh_simulator_plus_solve": {
+    "max_seconds": 4.446130497992272,
+    "median_seconds": 4.05474963899178,
+    "min_seconds": 4.0153186219977215,
+    "samples_seconds": [
+      4.0153186219977215,
+      4.446130497992272,
+      4.05474963899178
+    ]
+  },
+  "repetitions": 3,
+  "run_directory": "/home/jonjon/Documents/05_Research/Fluxonium-Optimization/data/output/cmaes/continuation_140ns_from_reference_6h_legacy_20261029T062442Z",
+  "simulator_source": "HEAD",
+  "solve_on_shared_simulator": {
+    "max_seconds": 4.1869993999862345,
+    "median_seconds": 3.9991739249962848,
+    "min_seconds": 3.870889858008013,
+    "samples_seconds": [
+      3.9991739249962848,
+      4.1869993999862345,
+      3.870889858008013
+    ]
+  },
+  "warmups": 1
+}

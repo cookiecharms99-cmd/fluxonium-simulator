@@ -1,12 +1,11 @@
 # Fluxonium Reset Optimization
 
-This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.99, while reducing the total reset time.
+This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.99, while reducing the total reset time. (I think?)
 
 The repository has completed its first physics audit and simulator refactor.
 CMA-ES is the established optimization baseline; reinforcement learning is a
 later exploratory direction, especially if one trained policy can transfer
-across device conditions or support feedback. The active milestone is a
-professor-comparable fixed-charge, flux-only CMA-ES baseline.
+across device conditions or support feedback. Currently we have implemented
 
 For the current implementation checkpoint and immediate next task, read
 [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md). The active checklist is in
@@ -35,7 +34,7 @@ with
 
 $\phi_{ext}=2\pi\frac{\Phi_{ext}}{\Phi_0}.$
 
-Half flux,($\Phi_\mathrm{ext}/\Phi_0=0.5$), corresponds to phase ($pi$) and is the idle endpoint. Quarter flux is the experimentally calibrated interaction neighborhood. A static model places the bare ($g\leftrightarrow f$) cavity resonance near ($0.253980967,\Phi_0$); this model-derived value should not silently replace the experimental calibration point at ($0.25\,\Phi_0$).
+Half flux,($\Phi_\mathrm{ext}/\Phi_0=0.5$), corresponds to phase ($pi$) and is the idle endpoint. Quarter flux is the experimentally calibrated interaction neighborhood. A static model places the bare ($g\leftrightarrow f$) cavity resonance near ($0.253980967,\Phi_0$); this model-derived value should not silently replace the experimental calibration point at ($0.25\,\Phi_0$) (though for simulation purposes this does not yet affect anything.)
 
 The full numerical basis is
 
@@ -43,9 +42,11 @@ The full numerical basis is
 
 For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
+(NOTE! I don't concretely know what the charge drive does haha, just that it's an available control xp)
+
 ## Controls and objective
 
-Flux and charge-drive controls are parameterized by sine coefficients. The flux phase has the form
+Flux and charge-drive controls are parameterized by sine coefficients for now in a Fourier basis (and an envolope for charge overall on default / reference mode). The flux phase has the form
 
 $\phi_\mathrm{ext}(t)=\pi+\sum_k c_k^\Phi
 \sin\left(\frac{k\pi t}{T}\right)$
@@ -61,8 +62,8 @@ The optimization objective is the final ground-state population
 | Path                                        | Purpose                                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `source/simulator.py`                       | Active refactored fluxonium-cavity simulator.                                                     |
-| `source/control_initialization.py`           | Physical pulse guesses and pulse-to-CMA-ES-coefficient initialization helpers.                   |
-| `PROJECT_HANDOFF.md`                         | Compact current-state handoff for the next collaboration session.                                 |
+| `source/control_initialization.py`          | Physical pulse guesses and pulse-to-CMA-ES-coefficient initialization helpers.                    |
+| `PROJECT_HANDOFF.md`                        | Compact current-state handoff for the next collaboration session.                                 |
 | `source/optimization/cmaes.py`              | Reusable serial and multiprocessing CMA-ES machinery.                                             |
 | `source/old_sim.py`                         | Earlier project simulator retained for comparison.                                                |
 | `source/test.py`                            | Current simulator smoke test and timing script.                                                   |
@@ -71,7 +72,7 @@ The optimization objective is the final ground-state population
 | `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
 | `config/baseline_reset.json`                | Human-readable statement of the intended baseline model.                                          |
 | `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
-| `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.   |
+| `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.    |
 | `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
 | `References/Research-Texts/`                | Papers and background reading, including the reinforcement-learning thesis.                       |
 | `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint.                                    |
@@ -79,9 +80,6 @@ The optimization objective is the final ground-state population
 | `jobs_to_send/`                             | SLURM scripts for cluster runs.                                                                   |
 | `data/`                                     | Simulation and optimizer outputs.                                                                 |
 | `main/`                                     | Work-in-progress production optimization scripts.                                                 |
-| `params.json`                               | Legacy flat parameter file used by older code.                                                    |
-
-`main.py` is currently only a package placeholder and is not yet the experiment entry point.
 
 ## Setup
 
@@ -103,7 +101,35 @@ Run the automated test suite with:
 uv run pytest
 ```
 
-Run the inexpensive CMA-ES smoke campaign with:
+## Friendly commands
+
+Start with the compact workflow guide:
+
+```bash
+uv run python main/flux.py commands
+```
+
+The friendly front door accepts unique fragments of verbose run names and
+creates readable timestamped output directories for new campaigns. For example:
+
+```bash
+# List prior artifacts, then inspect or audit one by a short unique fragment.
+uv run python main/flux.py list-runs --match warm
+uv run python main/flux.py plot --run warm_start_4779342
+uv run python main/flux.py audit --run warm_start_4779342 --cutoffs 20 40
+
+# Preview a full-physics 140-ns warm-start command without launching it.
+uv run python main/flux.py run --protocol reference --init warm_start \
+  --warm-start data/output/cmaes/reference_6h_legacy_4776599/best_weights.npy \
+  --duration 140 --full-physics --dry-run
+```
+
+Use `run`, `audit`, `plot`, or `benchmark` after `main/flux.py`; each forwards
+to the underlying trusted script and prints that exact command first.
+
+## Advanced commands
+
+Run the inexpensive CMA-ES smoke campaign directly with:
 
 ```bash
 uv run python main/run_cmaes.py
@@ -117,7 +143,7 @@ Run the fixed-charge, flux-only reference campaign with:
 uv run main/run_cmaes.py \
   --physics-config config/reference_prof.json \
   --control-protocol reference \
-  --initialization legacy_piecewise_lstsq \
+  --initialization piecewise_lstsq \
   --generations 5 --popsize 4 --workers 2
 ```
 
@@ -125,7 +151,7 @@ Without `--full-physics`, either protocol uses the fast cutoff-8 smoke settings.
 Reference mode optimizes 40 flux coefficients and keeps the calibrated charge
 drive fixed; joint mode remains an exploratory flux-plus-charge protocol.
 Choose the CMA-ES center explicitly with `--initialization zero`, `random`, or
-`legacy_piecewise_lstsq`; the legacy projected waveform is defined only for
+`piecewise_lstsq`; the professor-inspired projected waveform is defined only for
 the 150-ns reference protocol.
 
 For Athene, submit `jobs_to_send/reference_smoke_10min.slurm` first. After it
@@ -145,6 +171,8 @@ equal-budget initialization comparison is
   evaluation, checkpointed controls, and fresh-simulator reproduction. It has
   passed a cutoff-8 smoke run; cutoff-20 scientific baseline scores are still
   pending.
+- I was able to reach 0.99 fidelity for flux-only optimized circuit for T = 140ns.
+- Unverified: noticing common themes for good solutions towards the beginning interestingly enough
 
 See the analysis in `playzone/fluxonium_audit.py`. Run this from root
 
@@ -158,13 +186,8 @@ The following must be resolved or validated before numerical optimization result
 
 - Confirm the cycles-per-nanosecond versus radians-per-nanosecond convention for every stored frequency and for QuTiP evolution.
 - Confirm the physical origin and units of the cavity decay parameter currently represented as ($\kappa=2\pi/40$), with collapse operator ($\sqrt{\kappa},a$).
-- Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance.
-- Run cutoff-convergence checks at fluxonium cutoffs 20, 25, and 30.
+- Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance. (though maybe not super meaningful)
 - Validate the one-photon cavity truncation dynamically.
-- Establish cutoff-20 reference scores for zero coefficients, the direct
-  intuitive pulse, its 40-sine reconstruction, and then equal-budget CMA-ES
-  runs from declared initial centers.
-- Benchmark simulators using identical physics, controls, time grids, solver settings, and timing boundaries.
 - Record the source and hash of every CMA-ES initial coefficient vector.
 
 ## Optimization plan

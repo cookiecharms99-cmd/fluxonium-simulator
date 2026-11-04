@@ -86,6 +86,7 @@ class FluxoniumResetSimulator:
         self._times = None
         self._reference_flux_basis = None
         self._reference_times = None
+        self._idle_eigenstates: np.ndarray | None = None
 
         flux_values = self.physics["flux_vals"]
         self.idle_flux = float(flux_values["idle_flux"])
@@ -109,18 +110,17 @@ class FluxoniumResetSimulator:
     def n_controls(self) -> int:
         return self.n_flux_controls + self.n_charge_controls
 
-    def new_fluxonium(self, flux_quanta: float) -> Fluxonium:
-        return Fluxonium(
+    def build_static_system(self) -> None:
+        """Build operators once in the fixed LC x {|0>, |1>} basis."""
+        # This is the simulator's one persistent scqubits object. Its LC-basis
+        # operators and idle eigenstates are both used throughout a run.
+        self.idle_fluxonium = Fluxonium(
             EJ=self.physics["EJ"],
             EC=self.physics["EC"],
             EL=self.physics["EL"],
             cutoff=self.cutoff,
-            flux=flux_quanta,
+            flux=self.idle_flux,
         )
-
-    def build_static_system(self) -> None:
-        """Build operators once in the fixed LC x {|0>, |1>} basis."""
-        reference = self.new_fluxonium(self.idle_flux)
         cutoff = self.cutoff
 
         # Sparse identity matrices
@@ -128,9 +128,9 @@ class FluxoniumResetSimulator:
         I_cavity = sp.eye(2, format="csr")
 
         # Base sparse operators from scqubits (LC basis)
-        n_f = sp.csr_matrix(reference.n_operator(energy_esys=False))
-        cos_f = sp.csr_matrix(reference.cos_phi_operator())
-        sin_f = sp.csr_matrix(reference.sin_phi_operator())
+        n_f = sp.csr_matrix(self.idle_fluxonium.n_operator(energy_esys=False))
+        cos_f = sp.csr_matrix(self.idle_fluxonium.cos_phi_operator())
+        sin_f = sp.csr_matrix(self.idle_fluxonium.sin_phi_operator())
 
         # a_c = [[0, 1], [0, 0]], sigma_y = [[0, -1j], [1j, 0]]
         sigmay = sp.csr_matrix([[0, -1j], [1j, 0]], dtype=complex)
@@ -170,32 +170,41 @@ class FluxoniumResetSimulator:
         self.h_sin = qt.Qobj(EJ * sin_tensor_sparse, dims=dims)
         self.h_drive = self.n_tensor
 
+        # All current initial-state and reward projectors are defined at the
+        # idle point. Diagonalize that one Hamiltonian once, rather than
+        # recreating identical Fluxonium objects for g, e, and f separately.
+        _, self._idle_eigenstates = self.idle_fluxonium.eigensys(evals_count=3)
+
         # Keep sparse identity for collapse operators
         self.I_flux = I_flux
         self.c_ops = self.collapse_operators()
 
         self.initial_state = self.idle_mixture()
-        self.ground_projector = self.projectors_at_flux(self.idle_flux)["g0"]
+        self.ground_projector = self.idle_projectors()["g0"]
 
-    def state_at_flux(self, flux_quanta: float, level: int, photons: int) -> qt.Qobj:
-        _, states = self.new_fluxonium(flux_quanta).eigensys(evals_count=level + 1)
-        flux_state = states[:, level]
+    def idle_state(self, level: int, photons: int) -> qt.Qobj:
+        """Return an idle-flux eigenstate tensored with a cavity Fock state."""
+        if self._idle_eigenstates is None or level >= self._idle_eigenstates.shape[1]:
+            _, self._idle_eigenstates = self.idle_fluxonium.eigensys(
+                evals_count=level + 1
+            )
+        flux_state = self._idle_eigenstates[:, level]
         cavity_state = np.zeros(2)
         cavity_state[photons] = 1.0
         full_state = np.kron(flux_state, cavity_state).reshape(-1, 1)
         return qt.Qobj(full_state, dims=[[self.cutoff, 2], [1, 1]])
 
     def idle_mixture(self) -> qt.Qobj:
-        g0 = self.state_at_flux(self.idle_flux, level=0, photons=0)
-        e0 = self.state_at_flux(self.idle_flux, level=1, photons=0)
+        g0 = self.idle_state(level=0, photons=0)
+        e0 = self.idle_state(level=1, photons=0)
         return 0.5 * qt.ket2dm(g0) + 0.5 * qt.ket2dm(e0)
 
-    def projectors_at_flux(self, flux_quanta: float) -> dict[str, qt.Qobj]:
-        """Projectors used to audit the f0 -> g1 -> g0 reset pathway."""
+    def idle_projectors(self) -> dict[str, qt.Qobj]:
+        """Idle-basis projectors used to audit the f0 -> g1 -> g0 pathway."""
         states = {
-            "f0": self.state_at_flux(flux_quanta, level=2, photons=0),
-            "g0": self.state_at_flux(flux_quanta, level=0, photons=0),
-            "g1": self.state_at_flux(flux_quanta, level=0, photons=1),
+            "f0": self.idle_state(level=2, photons=0),
+            "g0": self.idle_state(level=0, photons=0),
+            "g1": self.idle_state(level=0, photons=1),
         }
         return {name: qt.ket2dm(state) for name, state in states.items()}
 

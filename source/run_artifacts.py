@@ -6,6 +6,7 @@ import csv
 import hashlib
 import json
 import platform
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -23,11 +24,28 @@ def utc_timestamp() -> str:
 
 
 def create_run_directory(
-    project_root: Path, requested_path: str | None, model="cmaes"
+    project_root: Path,
+    requested_path: str | None,
+    model: str = "cmaes",
+    label: str | None = None,
 ) -> Path:
-    """Create one empty run directory, refusing to overwrite an existing run."""
+    """Create one empty run directory, refusing to overwrite an existing run.
+
+    A label is a human-readable prefix for newly generated directories. It is
+    deliberately restricted to filesystem-safe characters so artifact paths
+    remain portable between laptop and cluster.
+    """
     if requested_path is None:
-        run_directory = project_root / "data" / "output" / model / f"{utc_timestamp()}"
+        if label is not None:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", label):
+                raise ValueError(
+                    "Run labels may contain letters, numbers, underscores, and "
+                    "hyphens, and must start with a letter or number."
+                )
+            directory_name = f"{label}-{utc_timestamp()}"
+        else:
+            directory_name = utc_timestamp()
+        run_directory = project_root / "data" / "output" / model / directory_name
         suffix = 1
         while run_directory.exists():
             run_directory = (
@@ -35,7 +53,7 @@ def create_run_directory(
                 / "data"
                 / "output"
                 / model
-                / (f"{utc_timestamp()}_{suffix}")
+                / (f"{directory_name}_{suffix}")
             )
             suffix += 1
     else:

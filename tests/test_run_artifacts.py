@@ -48,3 +48,13 @@ def test_run_artifacts_are_saved_without_overwriting(tmp_path) -> None:
 
     with pytest.raises(FileExistsError):
         create_run_directory(tmp_path, "one_run")
+
+
+def test_generated_run_directory_includes_a_safe_human_label(tmp_path) -> None:
+    run_directory = create_run_directory(
+        tmp_path, requested_path=None, label="reference-140ns-warm-full"
+    )
+    assert run_directory.name.startswith("reference-140ns-warm-full-")
+
+    with pytest.raises(ValueError, match="Run labels"):
+        create_run_directory(tmp_path, requested_path=None, label="not/a/path")

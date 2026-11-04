@@ -130,7 +130,9 @@ def fill_initial_weights(
             raise FileNotFoundError(
                 f"Warm-start weights file does not exist: {source_path}"
             )
-        source_weights = np.asarray(np.load(source_path, allow_pickle=False), dtype=float)
+        source_weights = np.asarray(
+            np.load(source_path, allow_pickle=False), dtype=float
+        )
         if source_weights.shape != initial_weights.shape:
             raise ValueError(
                 "Warm-start weight shape does not match the selected control "
@@ -189,6 +191,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--label",
+        help=(
+            "Optional filesystem-safe prefix for an automatically created run "
+            "directory, for example reference-140ns-warm-full. Ignored when "
+            "--out-dir is supplied."
+        ),
+    )
+    parser.add_argument(
         "--sigma0",
         type=float,
         default=0.3,
@@ -205,10 +215,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
-
-
-# signal exit handling
-#
 
 
 # --------------------------------------------------------------
@@ -241,7 +247,7 @@ def main() -> None:
         warm_start_path=args.warm_start,
     )
 
-    output_path = create_run_directory(PROJECT_ROOT, args.out_dir)
+    output_path = create_run_directory(PROJECT_ROOT, args.out_dir, label=args.label)
     mode = "full configured physics" if args.full_physics else "smoke physics"
 
     print(
