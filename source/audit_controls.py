@@ -77,12 +77,8 @@ def final_population_for_protocol(
     times: np.ndarray,
 ) -> float:
     """Evaluate saved weights through the same control doorway as their run."""
-    if control_protocol == "reference":
-        return simulator.reference_final_ground_population(weights, times)
-    if control_protocol == "joint":
-        return simulator.final_ground_population(weights, times)
-    raise ValueError(
-        f"Unsupported control protocol in run metadata: {control_protocol!r}"
+    return simulator.final_ground_population(
+        weights, times, control_protocol=control_protocol
     )
 
 

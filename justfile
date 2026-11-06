@@ -19,9 +19,11 @@ test:
 pull-cluster-data:
     rsync -avz --progress jseepaul2023@athene-login.hpc.fau.edu:~/fluxonium-simulator/data/output/cmaes ./data/output/cmaes/
 
-# quick plot on a run directory
-ez_plot:
-    uv run python main/plot_run.py "$(find data/output/cmaes -maxdepth 1 -type d | fzf)"
+# Quick plot on a selected run directory. Example:
+# just ez_plot --population-cutoff 13
+ez_plot +args="":
+    RUN_DIR="$(ls -td data/output/cmaes/*/ 2>/dev/null | fzf)" && \
+    uv run python main/plot_run.py "$RUN_DIR" {{ args }}
 
 # quick audit on a run data_directory
 ez_cutoff_audit:

@@ -53,7 +53,7 @@ def command_overview() -> str:
   list-runs [--match TEXT] List saved CMA-ES artifacts.
   run                      Launch a named CMA-ES run with friendly defaults.
   audit --run TEXT         Check one saved pulse across numerical cutoffs.
-  plot --run TEXT          Inspect reward history and saved controls.
+  plot --run TEXT          Inspect reward history, controls, and optional pathways.
   benchmark --run TEXT     Separate simulator startup time from solve time.
 
 Every --run value accepts an exact path, an exact output-directory name, or a
@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     plot.add_argument("--run", required=True)
     plot.add_argument("--save", type=Path)
     plot.add_argument("--no-show", action="store_true")
+    plot.add_argument(
+        "--population-cutoff",
+        type=int,
+        help="Also reproduce pathway populations at this cutoff (for example 13 or 20).",
+    )
     plot.add_argument("--dry-run", action="store_true")
 
     benchmark = subparsers.add_parser("benchmark", help="Benchmark one saved run.")
@@ -201,6 +206,8 @@ def main() -> None:
             command.extend(("--save", str(args.save)))
         if args.no_show:
             command.append("--no-show")
+        if args.population_cutoff is not None:
+            command.extend(("--population-cutoff", str(args.population_cutoff)))
         execute(command, dry_run=args.dry_run)
     elif args.command == "benchmark":
         command = [

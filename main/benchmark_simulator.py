@@ -95,11 +95,9 @@ def evaluate_saved_weights(
     times: np.ndarray,
 ) -> float:
     """Evaluate through the same control doorway used by the saved campaign."""
-    if control_protocol == "reference":
-        return simulator.reference_final_ground_population(weights, times)
-    if control_protocol == "joint":
-        return simulator.final_ground_population(weights, times)
-    raise ValueError(f"Unsupported control protocol: {control_protocol!r}")
+    return simulator.final_ground_population(
+        weights, times, control_protocol=control_protocol
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

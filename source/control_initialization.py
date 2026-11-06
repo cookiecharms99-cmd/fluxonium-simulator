@@ -40,6 +40,11 @@ def piecewise_pulse_init(
     return pulse
 
 
+def copy_pulse(pulse: np.ndarray):
+
+    return pulse
+
+
 def lst_sq_projection_flux(pulse: np.ndarray, basis_arr: np.ndarray, idle_phase=np.pi):
     """
     Compute the best fit weight vector for a given flux pulse using least squares.
@@ -64,20 +69,30 @@ def lst_sq_projection_flux(pulse: np.ndarray, basis_arr: np.ndarray, idle_phase=
     return weights_guess
 
 
+def lst_sq_projection_charge(
+    drive: np.ndarray, basis_arr: np.ndarray, a_eff: float
+) -> np.ndarray:
+    pass
+
+
+class ChargeInit:
+    pass
+
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from simulator import sine_basis
 
     times = np.linspace(0, 150, 500)
     duration = times[-1]
-    pulse = piecewise_pulse_init(times)
+    pulse = PulseInit.piecewise_pulse_init(times)
     idle_phase = np.pi
 
     # Now we will see how well least squares reconstructs pulse, using a blunt verison to make things visible!
     flux_basis_blunt = sine_basis(times, count=7)
     flux_basis_fine = sine_basis(times, count=40)
-    weights_blunt = lst_sq_projection_flux(pulse, flux_basis_blunt)
-    weights_fine = lst_sq_projection_flux(pulse, flux_basis_fine)
+    weights_blunt = PulseInit.lst_sq_projection_flux(pulse, flux_basis_blunt)
+    weights_fine = PulseInit.lst_sq_projection_flux(pulse, flux_basis_fine)
     approx_pulse_blunt = idle_phase + weights_blunt @ flux_basis_blunt
     approx_pulse_fine = idle_phase + weights_fine @ flux_basis_fine
     plt.title("Least Squares Projection onto initial pulse array (n = 7,40)")

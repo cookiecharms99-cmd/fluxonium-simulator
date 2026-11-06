@@ -20,11 +20,17 @@ class TinyReferenceSimulator:
     n_flux_controls = 4
     idle_phase = np.pi
 
-    def final_ground_population(self, weights, times) -> float:
-        return 0.11
+    def parameter_count(self, control_protocol: str) -> int:
+        if control_protocol == "reference":
+            return self.n_flux_controls
+        if control_protocol == "joint":
+            return self.n_controls
+        raise ValueError(control_protocol)
 
-    def reference_final_ground_population(self, weights, times) -> float:
-        return 0.22
+    def final_ground_population(
+        self, weights, times, *, control_protocol="joint"
+    ) -> float:
+        return 0.11 if control_protocol == "joint" else 0.22
 
 
 def test_runner_builds_piecewise_projected_reference_center() -> None:

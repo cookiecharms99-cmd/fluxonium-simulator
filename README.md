@@ -46,12 +46,22 @@ For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
 ## Controls and objective
 
-Flux and charge-drive controls are parameterized by sine coefficients for now in a Fourier basis (and an envolope for charge overall on default / reference mode). The flux phase has the form
+Flux controls use sine coefficients, while the exploratory joint charge control
+uses an independent full-Fourier envelope (constant, then sine/cosine pairs)
+multiplying the configured ``sin(omega_ef * t)`` carrier. The charge envelope
+is deliberately not constrained to vanish at the pulse endpoints. The flux
+phase has the form
 
 $\phi_\mathrm{ext}(t)=\pi+\sum_k c_k^\Phi
 \sin\left(\frac{k\pi t}{T}\right)$
 
-so the pulse automatically begins and ends at the half-flux idle point. The project simulator can optimize both flux and charge-drive coefficients. The professor's reference implementation optimizes only the flux pulse and keeps the charge drive fixed.
+so the pulse automatically begins and ends at the half-flux idle point. The
+project simulator can optimize both flux and charge-drive coefficients. The
+professor's reference implementation optimizes only the flux pulse and keeps
+the calibrated charge drive fixed at
+``(Omega / n_ef) * sin(omega_ef * t)``. The full-Fourier joint basis supersedes
+the previous sine-only exploratory charge basis, so old joint-control weights
+must not be treated as directly reproducible under this new parameterization.
 
 The optimization objective is the final ground-state population
 

@@ -7,7 +7,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PARENT_RUN="ata/output/cmaes/continuation_130ns_from_140ns_20261103T080753Z"
+PARENT_RUN="data/output/cmaes/continuation_130ns_from_140ns_20261103T080753Z"
 PARENT_WEIGHTS="${PARENT_RUN}/best_weights.npy"
 RUN_LABEL="continuation_120ns_from_130ns_$(date -u +%Y%m%dT%H%M%SZ)"
 

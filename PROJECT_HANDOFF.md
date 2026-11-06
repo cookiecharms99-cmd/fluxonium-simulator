@@ -11,18 +11,31 @@ The trusted simulator is `source/simulator.py`, using a fixed fluxonium LC
 basis tensor a two-state cavity Fock basis. The reset objective is final
 `P(g,0)` from a 50/50 incoherent idle mixture of `|g,0>` and `|e,0>`.
 
-Two control protocols now exist and deliberately share the same device,
-solver, collapse operator, initial state, and measurement:
+Two control protocols deliberately share one explicit control-to-evolution
+pathway, as well as the same device, solver, collapse operator, initial state,
+and measurement:
 
-- `joint`: exploratory optimization of flux and charge sine coefficients;
+- `joint`: exploratory optimization of flux coefficients and a full-Fourier
+  charge envelope;
 - `reference`: professor-comparable optimization of 40 flux coefficients
   with the calibrated charge drive fixed to
   `(Omega / n_ef) * sin(omega_ef * t)`.
 
-`main/run_cmaes.py` selects these with `--control-protocol joint|reference`
-and accepts `--physics-config`. Its artifacts, checkpoints, saved controls,
-and fresh-simulator reproduction honor the selected protocol. Reference-mode
-serial and multiprocessing rewards agree in tests.
+`FluxoniumResetSimulator.controls(..., control_protocol=...)` owns waveform
+construction, and the generic evolution/population methods carry that same
+explicit protocol argument. `main/run_cmaes.py` selects these with
+`--control-protocol joint|reference` and accepts `--physics-config`. Its
+artifacts, checkpoints, saved controls, and fresh-simulator reproduction honor
+the selected protocol. Reference-mode serial and multiprocessing rewards agree
+in tests.
+
+The joint protocol's charge envelope is now a full Fourier basis: constant,
+then sine/cosine pairs. It still multiplies the exploratory `sin(omega_ef*t)`
+carrier. This intentionally replaces the prior sine-only charge basis, so old
+joint artifacts cannot be regenerated from their coefficient vectors without a
+separate projection or compatibility mode. The fixed-charge reference protocol
+is unchanged; a one-time independent waveform-and-evolution check verified it
+exactly after removal of the duplicate reference methods.
 
 The runner also has explicit initialization choices: `zero`, seeded `random`,
 and `legacy_piecewise_lstsq`. The latter projects the professor-inspired
@@ -30,7 +43,7 @@ and `legacy_piecewise_lstsq`. The latter projects the professor-inspired
 reference protocol at 150 ns, and is recorded in metadata alongside the
 initial-weight hash.
 
-The last verified suite result was **9 passed, 1 skipped**. A one-generation,
+The last verified suite result was **21 passed, 1 skipped**. A one-generation,
 cutoff-8 reference smoke run completed with a 40-element coefficient vector
 and matching fresh reproduction. This establishes execution plumbing only;
 it is not a scientific performance result.

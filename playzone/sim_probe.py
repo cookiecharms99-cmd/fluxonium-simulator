@@ -9,8 +9,8 @@ def _():
     return
 
 
-app._unparsable_cell(
-    r"""
+@app.cell
+def _():
     import csv
     import json
     from pathlib import Path
@@ -28,10 +28,17 @@ app._unparsable_cell(
         sine_basis,
     )
 
-    from 
-    """,
-    name="_"
-)
+
+
+    return (
+        DEFAULT_RUNS_DIRECTORY,
+        FluxoniumResetSimulator,
+        PROJECT_ROOT,
+        Path,
+        json,
+        np,
+        plt,
+    )
 
 
 @app.cell
@@ -89,8 +96,6 @@ def _(DEFAULT_RUNS_DIRECTORY):
     old_run_path = DEFAULT_RUNS_DIRECTORY / old_run_dir
 
     new_run_path = DEFAULT_RUNS_DIRECTORY / new_run_dir
-
-
     return new_run_path, old_run_path
 
 
@@ -107,8 +112,6 @@ def _(new_run_path, np, old_run_path):
     print(f"Initial weights for 140ns-> {initial_weights_140}")
     print(f"Best weights from 150ns -> {best_weights_150}")
     print(f"Max difference -> {np.max(delta)}")
-
-
     return best_weights_150, initial_weights_140
 
 
@@ -123,7 +126,7 @@ def _(FluxoniumResetSimulator, PROJECT_ROOT, Path, json):
             return json.load(file)
 
     reference_config = load_json(reference_config_path)
-
+    reference_config["model_settings"]["cutoff"] = 13
 
     print(reference_config)
     print("\n\nLoaded! :D")
@@ -162,11 +165,6 @@ def _(best_weights_150, initial_weights_140, np, plt, reference_config, sim):
 
     plt.tight_layout()
     plt.show()
-
-
-
-    
-
     return times_140_ns, times_150_ns
 
 
@@ -176,6 +174,72 @@ def _(best_weights_150, initial_weights_140, sim, times_140_ns, times_150_ns):
     final_pop_140 = sim.reference_final_ground_population(flux_weights = initial_weights_140, times = times_140_ns)
 
     print(f"140 (ns): {final_pop_140} | 150 : {final_pop_150}")
+    return
+
+
+app._unparsable_cell(
+    r"""
+    print(sim._reference_times - sim._times)\
+    """,
+    name="_"
+)
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(P_e0, P_f0, P_g0, P_g1, controls, leakage, np, plt, times_150_ns):
+
+    _fig, (ax_pop, ax_ctrl) = plt.subplots(
+        2, 1, figsize=(10, 7.5), sharex=True, gridspec_kw={"height_ratios": [2.5, 1]}
+    )
+
+    # ---------------- Top Panel: Pathway Populations ----------------
+    ax_pop.plot(times_150_ns, P_g0, label=r"$|g,0\rangle$ (Target ground)", color="#2ca02c", lw=2.4)
+    ax_pop.plot(times_150_ns, P_e0, label=r"$|e,0\rangle$ (Initial qubit)", color="#1f77b4", lw=1.8)
+    ax_pop.plot(times_150_ns, P_f0, label=r"$|f,0\rangle$ (Drive intermediate)", color="#ff7f0e", lw=1.8)
+    ax_pop.plot(times_150_ns, P_g1, label=r"$|g,1\rangle$ (Cavity photon)", color="#9467bd", lw=1.8, ls="--")
+    ax_pop.plot(times_150_ns, leakage, label=r"Leakage ($1 - \sum P_i$)", color="#d62728", lw=1.5, ls=":")
+
+    # Highlight Target Benchmark (0.999)
+    ax_pop.axhline(0.999, color="black", ls="--", alpha=0.4, label="Target: 0.999")
+    ax_pop.set_ylabel("State Population", fontsize=11, fontweight="semibold")
+    ax_pop.set_ylim(-0.02, 1.04)
+    ax_pop.grid(True, linestyle="--", alpha=0.4)
+    ax_pop.legend(loc="upper left", framealpha=0.9, fontsize=9.5)
+    ax_pop.set_title(
+        f"150-ns Reference Reset Dynamics — Final $P(g,0) = {P_g0[-1]:.5f}$",
+        fontsize=12,
+        fontweight="bold",
+        pad=10,
+    )
+
+    # ---------------- Bottom Panel: Applied Controls ----------------
+    # Plot flux trajectory in physical units (Phi / Phi_0)
+    flux_in_units = controls.external_phase / (2.0 * np.pi)
+    ax_ctrl.plot(times_150_ns, flux_in_units, color="#333333", lw=2.0, label=r"$\Phi_{\rm ext}(t) / \Phi_0$")
+    ax_ctrl.axhline(0.25, color="crimson", ls=":", alpha=0.7, label=r"Calibrated $0.25\,\Phi_0$")
+    ax_ctrl.axhline(0.50, color="gray", ls="--", alpha=0.5, label=r"Idle $0.50\,\Phi_0$")
+
+    ax_ctrl.set_xlabel("Time (ns)", fontsize=11, fontweight="semibold")
+    ax_ctrl.set_ylabel(r"Flux [$\Phi_0$]", fontsize=10, fontweight="semibold")
+    ax_ctrl.grid(True, linestyle="--", alpha=0.4)
+    ax_ctrl.legend(loc="upper left", framealpha=0.9, fontsize=9)
+    ax_ctrl.set_ylim(0, 0.70)
+
+    plt.tight_layout()
+    plt.gca()
+    plt.show()
+    return
+
+
+@app.cell
+def _():
+
+
     return
 
 

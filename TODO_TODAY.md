@@ -1,48 +1,67 @@
-# Next session
+# Next session — 2026-11-07
 
-Updated: 2026-10-29
+The completed record belongs in `Journal/`; this file is only the next
+actionable work.
 
-The completed record lives in `Journal/`; this file is deliberately only the
-next actionable work.
+## First: consolidate control protocols
 
-## Software QOL:
+- [x] Replace duplicated joint/reference population fetchers with one explicit
+      protocol-control/evolution pathway. `reference` was independently checked
+      against the removed waveform/evolution formulation; its physics is
+      unchanged. Joint charge envelopes now use the intended full Fourier basis.
 
-- [x] Make a help (or just) or make command which guides the user on what to run for QOL.
-- [x] Simplify directory names. pointers might exist in metadata, or figure out how to pipe to the python script grep results or support pattern matching in the input, since many of our commands run on verbose file names
+- [x] Make protocol parameter count authoritative rather than relying on a
+      basis cache. `FluxoniumResetSimulator.parameter_count()` now derives it
+      from the declared protocol and coefficient counts. The eventual protocols
+      are fixed-charge flux-only, joint, and charge-only. -> UNDO LATER
+- [ ] Do not implement charge-only until we state whether its optimized drive
+      replaces the calibrated tone, modulates it, or adds a bounded correction. -> IGNORE
 
-Notes:
-fzf for the win <3
+## Then: diagnose the trusted 150-ns reference pulse
 
-## Result Misison
+- [ ] Compare the pathway timing against the fixed charge-drive, interaction,
+      and cavity-decay timescales. Write observations before changing controls.
+- [ ] Look through Jonathan's pulse plots together and record only concrete
+      hypotheses, not visual vibes masquerading as conclusions. :3
 
-We noticed that despite the run having a better start, because of sigma, it did not effectively capitalize on it. Decreasing sigma might keep in a plateau though but idk lol. Additionally we do not see the best initial path recorded anywhere so we will need to fix this.
+## Then: establish the 0.999 reference problem clearly
 
-Qualitatively, we are starting to notice some consistent trends with high performers but I don't want to speak too hastily. I noticed something where the initial shape seems roughly the same even on different time frames maybe we can exploit this in the future.
+- [ ] Reproduce the best 150-ns score at cutoff 20 and audit it at cutoff 40.
+- [ ] Decide whether a longer/equal-budget fixed-charge CMA-ES run is still
+      improving, or has genuinely plateaued below 0.999.
+- [ ] Record the meeting conclusions: target, experimental origin of kappa,
+      and any clarification of the 20-minute performance observation.
 
-Missions ->
+## CMA-ES engineering, after the diagnosis
 
-- [] Record cleaning, record best ever with the initial reward as well!
-- [] Engineering: decide on how to handle sigma0 when using a warm start. With the research done, make notes for the future on how to avoid plateaus due to sigma as well.
+- [ ] Seed the evaluated initial center as the CMA-ES incumbent so a good warm
+      start is retained even if every first sampled candidate is worse.
+- [ ] Add a focused regression test for that incumbent behavior.
+- [ ] Compare warm-start `sigma0` values (for example 0.05, 0.1, 0.3) under an
+      equal evaluation budget; record seed, center score, and best-so-far score.
+- [ ] Do **not** prioritize a log loss: ordinary CMA-ES is rank-based, so a
+      monotonic transformation of reward does not change its candidate ranking.
+- [ ] Define physically justified flux bounds/clamping before enabling one.
+      Compare declared bounded controls against the unclamped reference; do not
+      silently add a legacy-style `tanh` limiter.
 
-## Then: choose the duration-continuation direction
+## Charge-control design (parked until the reference diagnosis is written)
 
-- [ ] If warm start is clearly more efficient under the equal budget, launch a
-      documented 130-ns continuation from the validated 140-ns pulse.
-- [ ] If it is not, compare pulse shapes and the recorded center scores before
-      changing CMA-ES settings; do not add restart heuristics yet.
+- [ ] Specify whether optimized charge control replaces the calibrated tone or
+      acts as a bounded correction/envelope around it.
+- [ ] Design a charge basis separately from the flux basis. Unlike flux, the
+      charge drive need not return to an idle endpoint, so consider a full
+      Fourier representation (constant, sine, and cosine terms) or physically
+      meaningful carrier quadratures.
+- [ ] Establish flux-only and charge-only ablations before retrying a joint
+      optimization.
 
-## Parked until a physics decision
+## Later / hygiene
 
-- [ ] Decide whether joint charge control should replace the calibrated charge
-      tone or act as a bounded correction/envelope around it. Only then design
-      its parameter scales, initial center, and fair baseline comparison.
-- [ ] Confirm decay-rate provenance and the cycles/ns versus radians/ns
-      convention with Dr. Fu before making experimental-strength claims.
-
-## Small project hygiene
-
-- [ ] Add `main/plot_run.py`, `source/audit_controls.py`, and
-      `main/benchmark_simulator.py` usage to `README.md` when the immediate
-      comparison is complete.
-- [ ] Keep raw `data/output/` ignored; later export a concise results index
-      from validated per-run artifacts rather than using one concurrent CSV.
+- [ ] Make a compatibility benchmark for the old code with exactly matched
+      cutoff, grid, solver tolerances, controls, and worker count; report
+      construction, one evaluation, and one generation separately.
+- [ ] Update `PROJECT_HANDOFF.md` and `README.md` after this diagnosis round so
+      their target and checkpoint are no longer stale.
+- [ ] Keep raw `data/output/` ignored; export a concise validated results index
+      later rather than maintaining one concurrently written CSV.

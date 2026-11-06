@@ -75,11 +75,9 @@ def evaluate_protocol_center(
     times: np.ndarray,
 ) -> float:
     """Evaluate the declared CMA-ES center before population sampling begins."""
-    if control_protocol == "joint":
-        return simulator.final_ground_population(weights, times)
-    if control_protocol == "reference":
-        return simulator.reference_final_ground_population(weights, times)
-    raise ValueError(f"Unknown control protocol: {control_protocol!r}.")
+    return simulator.final_ground_population(
+        weights, times, control_protocol=control_protocol
+    )
 
 
 def fill_initial_weights(
@@ -373,10 +371,10 @@ def main() -> None:
         save_controls(
             output_path / "controls.npz",
             times,
-            (
-                simulator.controls(progress.best_weights, times)
-                if args.control_protocol == "joint"
-                else simulator.reference_controls(progress.best_weights, times)
+            simulator.controls(
+                progress.best_weights,
+                times,
+                control_protocol=args.control_protocol,
             ),
         )
         metadata["completed_generations"] = len(progress.history)
@@ -426,16 +424,11 @@ def main() -> None:
             # A fresh simulator confirms that the saved pulse, not worker-local
             # state, produces the result written to disk.
             reproduction_simulator = FluxoniumResetSimulator(physics_config)
-            if args.control_protocol == "joint":
-                reproduced_reward = reproduction_simulator.final_ground_population(
-                    result.best_weights, times
-                )
-            else:
-                reproduced_reward = (
-                    reproduction_simulator.reference_final_ground_population(
-                        result.best_weights, times
-                    )
-                )
+            reproduced_reward = reproduction_simulator.final_ground_population(
+                result.best_weights,
+                times,
+                control_protocol=args.control_protocol,
+            )
             reproduction_delta = reproduced_reward - result.best_reward
             if not np.isclose(
                 reproduced_reward, result.best_reward, rtol=1e-10, atol=1e-12

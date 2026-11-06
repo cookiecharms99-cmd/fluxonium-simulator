@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Literal, Sequence
 
+import control_initialization as control_inits
 import numpy as np
 import qutip as qt
 import scipy.sparse as sp
@@ -16,6 +17,9 @@ def phase_from_flux(flux_quanta: float | np.ndarray) -> float | np.ndarray:
     return 2.0 * np.pi * flux_quanta
 
 
+# Bases!
+
+
 def sine_basis(times: np.ndarray, count: int) -> np.ndarray:
     """Return sin(k pi t / T), k=1..count; all functions vanish at endpoints."""
     duration = times[-1]
@@ -25,6 +29,35 @@ def sine_basis(times: np.ndarray, count: int) -> np.ndarray:
         return np.empty((0, len(times)))
     k = np.arange(1, count + 1, dtype=float)[:, None]
     return np.sin(np.pi * k * times / duration)
+
+
+def charge_fourier_basis(times: np.ndarray, count: int) -> np.ndarray:
+    """Return a full Fourier basis for a charge-drive envelope.
+
+    The rows are ``1, sin(2 pi t/T), cos(2 pi t/T), ...``.  Unlike the flux
+    pulse, the charge envelope is not required to vanish at the endpoints:
+    the experimental decision about its turn-on/off belongs to the chosen
+    control protocol, not to this numerical basis.
+    """
+    if count < 0:
+        raise ValueError("The number of control coefficients cannot be negative.")
+    if count == 0:
+        return np.empty((0, len(times)))
+    duration = times[-1]
+    basis = np.zeros(shape=(count, len(times)))
+    basis[0] = 1.0
+    row = 1
+    k = 1
+    while row < count:
+        basis[row] = np.sin(2 * np.pi * k * times / duration)
+        row += 1
+        if row < count:
+            basis[row] = np.cos(2 * np.pi * k * times / duration)
+        k += 1
+    return basis
+
+
+ControlProtocol = Literal["joint", "reference"]
 
 
 def validate_protocol_times(times: np.ndarray) -> np.ndarray:
@@ -64,9 +97,11 @@ class ControlWaveforms:
 class FluxoniumResetSimulator:
     """Full fluxonium + one-photon cavity model for the active-reset study.
 
-    ``weights`` has the layout ``[flux weights, charge-drive weights]``. Flux
-    coefficients perturb the idle phase pi, so sine control guarantees a pulse
-    begins and ends at the half-flux sweet spot.
+    Joint-protocol ``weights`` have the layout ``[flux weights, charge-drive
+    weights]``.  Reference-protocol weights contain only flux coefficients;
+    that protocol keeps its calibrated charge tone fixed. Flux coefficients
+    perturb the idle phase pi, so sine control guarantees a pulse begins and
+    ends at the half-flux sweet spot.
 
     The model uses a fixed LC basis for fluxonium and a two-state cavity Fock
     basis. All frequency-like parameters and times must use one consistent
@@ -84,8 +119,6 @@ class FluxoniumResetSimulator:
         self._flux_basis = None
         self._charge_basis = None
         self._times = None
-        self._reference_flux_basis = None
-        self._reference_times = None
         self._idle_eigenstates: np.ndarray | None = None
 
         flux_values = self.physics["flux_vals"]
@@ -108,6 +141,7 @@ class FluxoniumResetSimulator:
 
     @property
     def n_controls(self) -> int:
+        """Number of coefficients in the exploratory joint protocol."""
         return self.n_flux_controls + self.n_charge_controls
 
     def build_static_system(self) -> None:
@@ -200,71 +234,77 @@ class FluxoniumResetSimulator:
         return 0.5 * qt.ket2dm(g0) + 0.5 * qt.ket2dm(e0)
 
     def idle_projectors(self) -> dict[str, qt.Qobj]:
-        """Idle-basis projectors used to audit the f0 -> g1 -> g0 pathway."""
+        """Idle-basis projectors used to audit the reset pathway."""
         states = {
-            "f0": self.idle_state(level=2, photons=0),
             "g0": self.idle_state(level=0, photons=0),
+            "e0": self.idle_state(level=1, photons=0),
+            "f0": self.idle_state(level=2, photons=0),
             "g1": self.idle_state(level=0, photons=1),
         }
         return {name: qt.ket2dm(state) for name, state in states.items()}
 
-    def controls(self, weights: Sequence[float], times: np.ndarray) -> ControlWaveforms:
-        """Reconstruct controls; the flux waveform is an external phase."""
+    def get_flux_default(self, times: np.ndarray, protocol=None, **kwargs):
+        if protocol is None:
+            return np.full_like(times, self.idle_phase)
+        elif protocol == "piecewise":
+            return control_inits.piecewise_pulse_init(times)
+        elif protocol == "warm_copy":
+            return control_inits.copy_pulse(kwargs["pulse_copy"])
+        else:
+            raise NotImplementedError("default protocol not yet implemented sorry! :(")
+
+    def controls(
+        self,
+        weights: Sequence[float],
+        times: np.ndarray,
+        *,
+        flux_default_protocol=None,
+        **kwargs,
+    ) -> ControlWaveforms:
+        """Reconstruct the controls selected by one explicit protocol.
+            When n_flux_controls is 0, fallback to a specified (or not) default protocol
+            When n_charge_controls is 0, fallback to a specified (or not) default protocol!
+
+
+        .
+            TODO: perhaps implement something similar for charge when it gets optimized for.
+
+            Charge for now is A(t)sin(wt) where A(t) is our defaulted object of interest.
+            For now we have A(t) = A_0 + X_charge * fourier-Basis
+        """
         weights = np.asarray(weights, dtype=float)
-        if weights.shape != (self.n_controls,):
-            raise ValueError(
-                f"Expected {self.n_controls} weights, got {weights.shape}."
-            )
+        expected_count = self.n_controls
+        if weights.shape != (expected_count,):
+            raise ValueError(f"Expected {expected_count} weights, got {weights.shape}.")
         times = validate_protocol_times(times)
 
         # Flux and charge bases share a time grid but have independent harmonic
         # counts. Rebuild both whenever that exact grid changes.
         if self._times is None or not np.array_equal(times, self._times):
             self._flux_basis = sine_basis(times, self.n_flux_controls)
-            self._charge_basis = sine_basis(times, self.n_charge_controls)
+            self._charge_basis = charge_fourier_basis(times, self.n_charge_controls)
             self._times = times.copy()
 
-        flux_control = (
-            self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
-        )
+        if self.n_flux_controls == 0:
+            flux_control = self.get_flux_default(flux_default_protocol, **kwargs)
+        else:
+            flux_control = (
+                self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
+            )
 
-        charge_envelope = weights[self.n_flux_controls :] @ self._charge_basis
-
-        charge_control = charge_envelope * np.sin(
-            float(self.physics["omega_ef"]) * times
-        )
+        # carrier mode for now!
+        carrier = np.sin(float(self.physics["omega_ef"]) * times)
+        envelope_default = float(self.physics["Omega"]) / float(self.physics["n_ef"])
+        if self.n_charge_controls == 0:
+            envelope = envelope_default
+        else:
+            delta_envelope = weights[self.n_flux_controls :] @ self._charge_basis
+            envelope = envelope_default + delta_envelope
+        charge_control = envelope * carrier
 
         return ControlWaveforms(
             external_phase=flux_control, charge_drive=charge_control
         )
-
-    def reference_controls(
-        self, flux_weights: Sequence[float], times: np.ndarray
-    ) -> ControlWaveforms:
-        """Build the professor-style flux-only pulse with fixed charge drive."""
-        flux_weights = np.asarray(flux_weights, dtype=float)
-        if flux_weights.shape != (self.n_flux_controls,):
-            raise ValueError(
-                f"Expected {self.n_flux_controls} weights, got {flux_weights.shape}."
-            )
-        times = validate_protocol_times(times)
-
-        if self._reference_times is None or not np.array_equal(
-            times, self._reference_times
-        ):
-            self._reference_flux_basis = sine_basis(times, self.n_flux_controls)
-            self._reference_times = times.copy()
-
-        flux_control = (
-            self.idle_phase
-            + flux_weights[: self.n_flux_controls] @ self._reference_flux_basis
-        )
-
-        charge_drive = (self.physics["Omega"] / self.physics["n_ef"]) * np.sin(
-            self.physics["omega_ef"] * times
-        )
-
-        return ControlWaveforms(external_phase=flux_control, charge_drive=charge_drive)
 
     def hamiltonian(self, controls: ControlWaveforms) -> list:
         """Return QuTiP's list-form time-dependent Hamiltonian."""
@@ -298,6 +338,7 @@ class FluxoniumResetSimulator:
         weights: Sequence[float],
         times: np.ndarray,
         *,
+        control_protocol: ControlProtocol = "joint",
         initial_state: qt.Qobj | None = None,
         e_ops: Sequence[qt.Qobj] | None = None,
         cavity_decay_rate: float | None = None,
@@ -336,30 +377,58 @@ class FluxoniumResetSimulator:
         )
 
     def final_ground_population(
-        self, weights: Sequence[float], times: np.ndarray
+        self,
+        weights: Sequence[float],
+        times: np.ndarray,
+        *,
+        control_protocol: ControlProtocol = "joint",
     ) -> float:
         """Return the final P(g, 0) at the idle bias; the reset objective."""
-        result = self.evolve(weights, times, e_ops=[self.ground_projector])
+        result = self.evolve(
+            weights,
+            times,
+            control_protocol=control_protocol,
+            e_ops=[self.ground_projector],
+        )
         return float(np.real(result.expect[0][-1]))
 
     def ground_population(
-        self, weights: Sequence[float], times: np.ndarray
+        self,
+        weights: Sequence[float],
+        times: np.ndarray,
+        *,
+        control_protocol: ControlProtocol = "joint",
     ) -> np.ndarray:
-        """
-        Return P(g,0)[t] at the idle basis, for experimenting
-        """
-        result = self.evolve(weights, times, e_ops=[self.ground_projector])
+        """Return the idle-basis ground-state population P(g, 0)[t]."""
+        result = self.evolve(
+            weights,
+            times,
+            control_protocol=control_protocol,
+            e_ops=[self.ground_projector],
+        )
         return np.real(result.expect[0])
 
-    def reference_final_ground_population(
-        self, flux_weights: Sequence[float], times: np.ndarray
-    ) -> float:
-        """Return final P(g, 0) for the flux-only fixed-charge protocol."""
-        waveform = self.reference_controls(flux_weights, times)
-        result = self._evolve_waveform(waveform, times, e_ops=[self.ground_projector])
-        return float(np.real(result.expect[0][-1]))
+    def pathway_populations(
+        self,
+        weights: Sequence[float],
+        times: np.ndarray,
+        *,
+        control_protocol: ControlProtocol = "joint",
+    ) -> dict[str, np.ndarray]:
+        """Return selected idle-basis populations along the reset pathway.
+
+        The returned curves are ``g0``, ``e0``, ``f0``, and ``g1`` for now.
+        """
+        projectors = self.idle_projectors()
+        names = tuple(projectors)
+        result = self.evolve(
+            weights,
+            times,
+            control_protocol=control_protocol,
+            e_ops=[projectors[name] for name in names],
+        )
+        return {name: np.real(result.expect[index]) for index, name in enumerate(names)}
 
 
 if __name__ == "__main__":
-    print("This is the simulator :3")
-    print("Hi :D")
+    print("hi!! :D")

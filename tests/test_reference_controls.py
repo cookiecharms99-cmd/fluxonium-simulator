@@ -21,7 +21,9 @@ def test_reference_controls_use_fixed_charge_drive() -> None:
     times = np.linspace(0.0, duration, 101)
     flux_weights = np.zeros(simulator.n_flux_controls)
 
-    controls = simulator.reference_controls(flux_weights, times)
+    controls = simulator.controls(
+        flux_weights, times, control_protocol="reference"
+    )
 
     expected_charge = (params["physics"]["Omega"] / params["physics"]["n_ef"]) * np.sin(
         params["physics"]["omega_ef"] * times
@@ -33,3 +35,20 @@ def test_reference_controls_use_fixed_charge_drive() -> None:
         simulator.idle_phase,
         atol=1e-12,
     )
+
+
+def test_reference_pathway_populations_are_labelled_and_start_in_idle_mixture() -> None:
+    times = np.linspace(0.0, 1.0, 11)
+    flux_weights = np.zeros(simulator.n_flux_controls)
+
+    populations = simulator.pathway_populations(
+        flux_weights, times, control_protocol="reference"
+    )
+
+    assert tuple(populations) == ("g0", "e0", "f0", "g1")
+    assert all(curve.shape == times.shape for curve in populations.values())
+    assert all(np.all(np.isfinite(curve)) for curve in populations.values())
+    np.testing.assert_allclose(populations["g0"][0], 0.5, atol=1e-12)
+    np.testing.assert_allclose(populations["e0"][0], 0.5, atol=1e-12)
+    np.testing.assert_allclose(populations["f0"][0], 0.0, atol=1e-12)
+    np.testing.assert_allclose(populations["g1"][0], 0.0, atol=1e-12)

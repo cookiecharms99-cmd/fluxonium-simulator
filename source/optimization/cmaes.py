@@ -56,10 +56,7 @@ def parameter_count(
     simulator: FluxoniumResetSimulator, control_protocol: ControlProtocol
 ) -> int:
     """Return the coefficient-vector length required by one control protocol."""
-    if control_protocol == "joint":
-        return simulator.n_controls
-    if control_protocol == "reference":
-        return simulator.n_flux_controls
+    return simulator.parameter_count(control_protocol)
 
 
 def evaluate_candidate(
@@ -69,12 +66,9 @@ def evaluate_candidate(
     control_protocol: ControlProtocol,
 ) -> float:
     """Evaluate one candidate under the selected physical control protocol."""
-    if control_protocol == "joint":
-        return simulator.final_ground_population(weights=candidate, times=times)
-    if control_protocol == "reference":
-        return simulator.reference_final_ground_population(
-            flux_weights=candidate, times=times
-        )
+    return simulator.final_ground_population(
+        weights=candidate, times=times, control_protocol=control_protocol
+    )
 
 
 def initialize_worker(
