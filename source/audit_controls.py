@@ -70,16 +70,13 @@ def resolve_output_directory(value: str) -> Path:
     return path if path.is_absolute() else PROJECT_ROOT / path
 
 
-def final_population_for_protocol(
+def final_population_for_saved_run(
     simulator: FluxoniumResetSimulator,
-    control_protocol: str,
     weights: np.ndarray,
     times: np.ndarray,
 ) -> float:
-    """Evaluate saved weights through the same control doorway as their run."""
-    return simulator.final_ground_population(
-        weights, times, control_protocol=control_protocol
-    )
+    """Evaluate saved weights through their embedded control configuration."""
+    return simulator.final_ground_population(weights, times)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,11 +110,8 @@ def main() -> None:
     metadata = load_json(run_directory / "metadata.json")
     try:
         physics_config = metadata["physics_config"]
-        control_protocol = metadata["run_parameters"]["control_protocol"]
     except KeyError as error:
-        raise KeyError(
-            "Run metadata is missing the saved physics configuration or control protocol."
-        ) from error
+        raise KeyError("Run metadata is missing the saved physics configuration.") from error
 
     weights = np.load(run_directory / "best_weights.npy", allow_pickle=False)
     with np.load(run_directory / "controls.npz", allow_pickle=False) as data:
@@ -130,9 +124,7 @@ def main() -> None:
         simulator = FluxoniumResetSimulator(test_config)
 
         start = perf_counter()
-        final_population = final_population_for_protocol(
-            simulator, control_protocol, weights, times
-        )
+        final_population = final_population_for_saved_run(simulator, weights, times)
         elapsed = perf_counter() - start
         output_rows.append((cutoff, final_population, elapsed))
         print(

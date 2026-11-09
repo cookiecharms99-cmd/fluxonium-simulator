@@ -90,14 +90,11 @@ def timing_summary(samples: list[float]) -> dict[str, float | list[float]]:
 
 def evaluate_saved_weights(
     simulator: Any,
-    control_protocol: str,
     weights: np.ndarray,
     times: np.ndarray,
 ) -> float:
-    """Evaluate through the same control doorway used by the saved campaign."""
-    return simulator.final_ground_population(
-        weights, times, control_protocol=control_protocol
-    )
+    """Evaluate through the saved configuration's active control blocks."""
+    return simulator.final_ground_population(weights, times)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -126,7 +123,6 @@ def main() -> None:
     with (run_directory / "metadata.json").open(encoding="utf-8") as file:
         metadata = json.load(file)
     physics_config = metadata["physics_config"]
-    control_protocol = metadata["run_parameters"]["control_protocol"]
     weights = np.load(run_directory / "best_weights.npy", allow_pickle=False)
     with np.load(run_directory / "controls.npz", allow_pickle=False) as data:
         times = data["times"]
@@ -138,21 +134,19 @@ def main() -> None:
 
     shared_simulator = simulator_class(physics_config)
     solve_only = measure(
-        lambda: evaluate_saved_weights(
-            shared_simulator, control_protocol, weights, times
-        ),
+        lambda: evaluate_saved_weights(shared_simulator, weights, times),
         args.repetitions,
         args.warmups,
     )
 
     def construct_and_solve() -> float:
         simulator = simulator_class(physics_config)
-        return evaluate_saved_weights(simulator, control_protocol, weights, times)
+        return evaluate_saved_weights(simulator, weights, times)
 
     end_to_end = measure(construct_and_solve, args.repetitions, args.warmups)
     benchmark = {
         "run_directory": str(run_directory),
-        "control_protocol": control_protocol,
+        "control_configuration": physics_config["model_settings"].get("controls"),
         "cutoff": int(physics_config["model_settings"]["cutoff"]),
         "duration_ns": float(metadata["run_parameters"]["duration_ns"]),
         "simulator_source": simulator_source,

@@ -36,3 +36,4 @@ def test_stop_request_preserves_the_last_completed_generation() -> None:
     assert len(history) == 1
     assert checkpoints[0].evaluation_count == 2
     assert checkpoints[0].history == history
+    assert checkpoints[0].sigma == 0.1

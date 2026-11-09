@@ -1,6 +1,6 @@
 # Fluxonium Reset Optimization
 
-This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.99, while reducing the total reset time. (I think?)
+This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.999, while reducing the total reset time.
 
 The repository has completed its first physics audit and simulator refactor.
 CMA-ES is the established optimization baseline; reinforcement learning is a
@@ -80,7 +80,7 @@ The optimization objective is the final ground-state population
 | `main/run_cmaes.py`                         | Command-line entry point for small or full-physics CMA-ES runs.                                   |
 | `tests/`                                    | Automated numerical and multiprocessing integration checks.                                       |
 | `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
-| `config/baseline_reset.json`                | Human-readable statement of the intended baseline model.                                          |
+| `config/legacy_configs/baseline_reset.json` | Historical pre-refactor baseline description; not a runnable simulator config.                   |
 | `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
 | `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.    |
 | `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
@@ -152,17 +152,16 @@ Run the fixed-charge, flux-only reference campaign with:
 ```bash
 uv run main/run_cmaes.py \
   --physics-config config/reference_prof.json \
-  --control-protocol reference \
   --initialization piecewise_lstsq \
   --generations 5 --popsize 4 --workers 2
 ```
 
-Without `--full-physics`, either protocol uses the fast cutoff-8 smoke settings.
-Reference mode optimizes 40 flux coefficients and keeps the calibrated charge
-drive fixed; joint mode remains an exploratory flux-plus-charge protocol.
+Without `--full-physics`, the runner uses fast cutoff-8 smoke settings. The
+reference config activates 40 flux coefficients and keeps the calibrated charge
+drive fixed; a joint config activates both blocks.
 Choose the CMA-ES center explicitly with `--initialization zero`, `random`, or
 `piecewise_lstsq`; the professor-inspired projected waveform is defined only for
-the 150-ns reference protocol.
+the 150-ns, flux-active configuration.
 
 For Athene, submit `jobs_to_send/reference_smoke_10min.slurm` first. After it
 finishes with complete artifacts, `jobs_to_send/reference_6h_legacy.slurm`

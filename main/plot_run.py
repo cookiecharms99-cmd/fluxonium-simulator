@@ -15,7 +15,7 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from source.simulator import FluxoniumResetSimulator  # noqa: E402
+from source.simulator import FluxoniumResetSimulator, PathwayDiagnostics  # noqa: E402
 
 DEFAULT_RUNS_DIRECTORY = PROJECT_ROOT / "data" / "output" / "cmaes"
 
@@ -68,7 +68,12 @@ def print_run_summary(
     parameters = metadata.get("run_parameters", {})
     print(f"Run: {run_directory}")
     print(f"Status: {summary.get('status', metadata.get('status', 'unknown'))}")
-    print(f"Protocol: {parameters.get('control_protocol', 'unknown')}")
+    controls = (
+        metadata.get("physics_config", {})
+        .get("model_settings", {})
+        .get("controls", "legacy flat control counts")
+    )
+    print(f"Controls: {controls}")
     print(f"Initialization: {parameters.get('initialization_scheme', 'unknown')}")
     print(f"Seed: {parameters.get('seed', 'unknown')}")
     print(
@@ -79,15 +84,15 @@ def print_run_summary(
     print(f"Objective evaluations: {summary.get('objective_evaluations', 'unknown')}")
     print(f"Fresh reproduction: {summary.get('fresh_reproduction_population')}")
     if population_cutoff is not None:
-        print(f"Reproducing pathway populations at cutoff {population_cutoff}...")
+        print(f"Reproducing pathway diagnostics at cutoff {population_cutoff}...")
 
 
-def reproduce_pathway_populations(
+def reproduce_pathway_diagnostics(
     metadata: dict,
     best_weights: np.ndarray,
     times: np.ndarray,
     population_cutoff: int,
-) -> dict[str, np.ndarray]:
+) -> PathwayDiagnostics:
     """Re-evaluate one saved candidate without mutating its stored metadata."""
     if population_cutoff < 2:
         raise ValueError("--population-cutoff must be at least 2.")
@@ -95,11 +100,7 @@ def reproduce_pathway_populations(
     physics_config = copy.deepcopy(metadata["physics_config"])
     physics_config["model_settings"]["cutoff"] = population_cutoff
     simulator = FluxoniumResetSimulator(physics_config)
-    control_protocol = metadata.get("run_parameters", {}).get("control_protocol")
-
-    return simulator.pathway_populations(
-        best_weights, times, control_protocol=control_protocol
-    )
+    return simulator.pathway_diagnostics(best_weights, times)
 
 
 def plot_run(
@@ -108,7 +109,7 @@ def plot_run(
     show: bool,
     population_cutoff: int | None,
 ) -> None:
-    """Plot reward history, controls, and optional pathway-population curves."""
+    """Plot reward history, controls, and optional pathway diagnostics."""
     metadata = load_json(run_directory / "metadata.json")
     summary = load_json(run_directory / "summary.json")
     print_run_summary(run_directory, metadata, summary, population_cutoff)
@@ -129,17 +130,17 @@ def plot_run(
     best_weights = np.load(weights_path, allow_pickle=False)
 
     history = load_history(run_directory / "history.csv")
-    populations = (
+    diagnostics = (
         None
         if population_cutoff is None
-        else reproduce_pathway_populations(
+        else reproduce_pathway_diagnostics(
             metadata, best_weights, times, population_cutoff
         )
     )
     figure, axes = plt.subplots(
-        3 if populations is None else 4,
+        3 if diagnostics is None else 5,
         1,
-        figsize=(9, 9),
+        figsize=(9, 9 if diagnostics is None else 13),
         constrained_layout=True,
     )
 
@@ -168,25 +169,43 @@ def plot_run(
     axes[2].set_ylabel("charge drive")
     axes[2].set_xlabel("time (ns)")
 
-    if populations is not None:
+    if diagnostics is not None:
         colors = {
             "g0": "tab:green",
             "e0": "tab:orange",
             "f0": "tab:red",
             "g1": "tab:purple",
         }
-        for name, population in populations.items():
-            axes[3].plot(times, population, label=name, color=colors[name])
-        selected_sum = np.sum(np.stack(tuple(populations.values())), axis=0)
-        axes[3].plot(times, selected_sum, "k--", alpha=0.55, label="sum pops")
+        for name, population in diagnostics.instantaneous_populations.items():
+            axes[3].plot(
+                times,
+                population,
+                label=rf"$P[{name[0]}(\varphi(t)),{name[1]}]$",
+                color=colors[name],
+            )
+        selected_sum = np.sum(
+            np.stack(tuple(diagnostics.instantaneous_populations.values())), axis=0
+        )
+        axes[3].plot(times, selected_sum, "k--", alpha=0.55, label="selected sum")
         axes[3].set_ylabel("population")
         axes[3].set_xlabel("time (ns)")
         axes[3].set_ylim(-0.02, 1.02)
         axes[3].set_title(
-            f"reproduced final P(g, 0) = {populations['g0'][-1]:.6f} "
+            f"instantaneous bare-fluxonium populations; final P(g, 0) = "
+            f"{diagnostics.instantaneous_populations['g0'][-1]:.6f} "
             f"| cutoff {population_cutoff}"
         )
         axes[3].legend(loc="upper left", fontsize=5, framealpha=0.01)
+
+        axes[4].plot(
+            times, diagnostics.cavity_photon_number, label=r"$\langle n_c\rangle$"
+        )
+        axes[4].plot(times, diagnostics.trace, "k--", alpha=0.7, label=r"Tr($\rho$)")
+        axes[4].set_ylabel("diagnostic")
+        axes[4].set_xlabel("time (ns)")
+        axes[4].set_ylim(-0.02, 1.05)
+        axes[4].set_title("basis-independent cavity occupation and trace")
+        axes[4].legend(loc="upper left", fontsize=7)
 
     figure.suptitle(run_directory.name)
     if save_path is not None:
@@ -214,7 +233,7 @@ def main() -> None:
         "--plot-pop",
         dest="population_cutoff",
         type=int,
-        help="Reproduce and plot pathway populations at this fluxonium cutoff.",
+        help="Reproduce and plot instantaneous pathway diagnostics at this cutoff.",
     )
     args = parser.parse_args()
     plot_run(

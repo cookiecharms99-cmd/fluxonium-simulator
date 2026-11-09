@@ -21,8 +21,16 @@
   },
   "model_settings": {
     "cutoff": 20,
-    "n_flux": 40,
-    "n_charge": 20,
+    "controls": {
+      "flux": {
+        "coefficient_count": 40,
+        "fixed_default": "idle"
+      },
+      "charge": {
+        "coefficient_count": 20,
+        "mode": "calibrated_plus_fourier_correction"
+      }
+    },
     "num_t_steps": 500,
 
     "qutip_opts": {

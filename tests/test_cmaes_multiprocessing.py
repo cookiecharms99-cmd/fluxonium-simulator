@@ -24,8 +24,8 @@ def small_physics_config() -> dict:
 
     settings = config["model_settings"]
     settings["cutoff"] = 8
-    settings["n_flux"] = 4
-    settings["n_charge"] = 2
+    settings["controls"]["flux"]["coefficient_count"] = 4
+    settings["controls"]["charge"]["coefficient_count"] = 2
     settings["num_t_steps"] = 60
     return config
 
@@ -56,8 +56,9 @@ def test_parallel_rewards_match_serial_rewards() -> None:
     )
 
 
-def test_reference_parallel_rewards_match_serial_rewards() -> None:
+def test_fixed_charge_parallel_rewards_match_serial_rewards() -> None:
     physics_config = small_physics_config()
+    physics_config["model_settings"]["controls"]["charge"]["coefficient_count"] = 0
     simulator = FluxoniumResetSimulator(physics_config)
     times = np.linspace(0.0, 5.0, physics_config["model_settings"]["num_t_steps"])
 
@@ -66,15 +67,12 @@ def test_reference_parallel_rewards_match_serial_rewards() -> None:
         rng.normal(0.0, 0.1, size=simulator.n_flux_controls) for _ in range(2)
     ]
 
-    serial_rewards = evaluate_serial(
-        simulator, candidates, times, control_protocol="reference"
-    )
+    serial_rewards = evaluate_serial(simulator, candidates, times)
     parallel_rewards = evaluate_parallel(
         physics_config,
         candidates,
         times,
         workers=2,
-        control_protocol="reference",
     )
 
     np.testing.assert_allclose(

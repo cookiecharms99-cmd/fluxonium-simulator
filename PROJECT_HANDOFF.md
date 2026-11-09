@@ -1,4 +1,4 @@
-# Project handoff — 2026-10-27
+# Project handoff — 2026-11-08
 
 This is the compact handoff for the next collaboration session. Read
 `README.md`, `AGENTS.md`, and this file before changing the physics or
@@ -11,23 +11,13 @@ The trusted simulator is `source/simulator.py`, using a fixed fluxonium LC
 basis tensor a two-state cavity Fock basis. The reset objective is final
 `P(g,0)` from a 50/50 incoherent idle mixture of `|g,0>` and `|e,0>`.
 
-Two control protocols deliberately share one explicit control-to-evolution
-pathway, as well as the same device, solver, collapse operator, initial state,
-and measurement:
-
-- `joint`: exploratory optimization of flux coefficients and a full-Fourier
-  charge envelope;
-- `reference`: professor-comparable optimization of 40 flux coefficients
-  with the calibrated charge drive fixed to
-  `(Omega / n_ef) * sin(omega_ef * t)`.
-
-`FluxoniumResetSimulator.controls(..., control_protocol=...)` owns waveform
-construction, and the generic evolution/population methods carry that same
-explicit protocol argument. `main/run_cmaes.py` selects these with
-`--control-protocol joint|reference` and accepts `--physics-config`. Its
-artifacts, checkpoints, saved controls, and fresh-simulator reproduction honor
-the selected protocol. Reference-mode serial and multiprocessing rewards agree
-in tests.
+One configuration-driven control-to-evolution path owns every control case.
+Each runnable JSON declares `model_settings.controls.flux` and `.charge`, with
+an explicit `coefficient_count` for each. A zero-sized flux block selects a
+declared fixed waveform; a zero-sized charge block retains the calibrated
+charge tone. The professor-comparable flux-only case, charge-only ablations,
+and exploratory joint control therefore differ by configuration rather than by
+simulator APIs or CLI protocol labels.
 
 The joint protocol's charge envelope is now a full Fourier basis: constant,
 then sine/cosine pairs. It still multiplies the exploratory `sin(omega_ef*t)`
@@ -37,16 +27,14 @@ separate projection or compatibility mode. The fixed-charge reference protocol
 is unchanged; a one-time independent waveform-and-evolution check verified it
 exactly after removal of the duplicate reference methods.
 
-The runner also has explicit initialization choices: `zero`, seeded `random`,
-and `legacy_piecewise_lstsq`. The latter projects the professor-inspired
-150-ns flux waveform into the 40-sine basis, is restricted to the fixed-charge
-reference protocol at 150 ns, and is recorded in metadata alongside the
-initial-weight hash.
+The runner has explicit initialization choices: `zero`, seeded `random`,
+`piecewise_lstsq`, and `warm_start`. Its artifacts record the effective
+configuration, initial-weight hash, per-generation sigma, and final sigma.
 
-The last verified suite result was **21 passed, 1 skipped**. A one-generation,
-cutoff-8 reference smoke run completed with a 40-element coefficient vector
-and matching fresh reproduction. This establishes execution plumbing only;
-it is not a scientific performance result.
+The last verified suite result was **24 passed, 1 skipped**. A two-generation,
+cutoff-8 fixed-charge smoke run completed with a 40-element coefficient vector,
+matching fresh reproduction, and recorded final sigma. This establishes
+execution plumbing only; it is not a scientific performance result.
 
 ## Physics guardrails
 
@@ -60,9 +48,8 @@ it is not a scientific performance result.
   `0.25 Phi_0`. The model-derived bare resonance near `0.253980967 Phi_0`
   remains a separate diagnostic value. The legacy intuitive pulse targets
   phase `pi/2`, i.e. `0.25 Phi_0`.
-- `kappa = 2*pi/40` and the cycles/ns versus radians/ns convention remain open
-  experimental/unit questions. Do not over-interpret numerical results until
-  they are clarified with Dr. Fu.
+- `kappa = 2*pi/40` is experimentally derived; its detailed unit convention
+  (including cycles/ns versus radians/ns) still needs explicit documentation.
 
 ## Current next task: intuitive initialization
 
@@ -90,9 +77,8 @@ the initialization scheme and coefficient hash in metadata.
 
 ## Architecture decisions worth preserving
 
-- Do not copy a second reference simulator. `reference_controls` and
-  `reference_final_ground_population` are the named reference doorway within
-  the shared simulator.
+- Do not copy a second reference simulator. Configured active and fixed control
+  blocks share the same simulator, solver, and measurement path.
 - Flux and charge sine bases are independent and start at `k=1`.
 - The simulator's temporary scqubits object used for fixed-LC-basis operators
   is not a flux-centered accuracy trick. A later small cleanup can cache one
@@ -112,8 +98,7 @@ uv run pytest
 
 uv run main/run_cmaes.py \
   --physics-config config/reference_prof.json \
-  --control-protocol reference \
-  --initialization legacy_piecewise_lstsq \
+  --initialization piecewise_lstsq \
   --generations 5 --popsize 4 --workers 2
 ```
 
@@ -124,7 +109,7 @@ and `ROADMAP.md` for the ordered research plan.
 Prepared launchers:
 
 - `scripts/run_reference_initialization_compare.sh`: laptop, three equal-budget
-  cutoff-20 runs for `zero`, `random`, and `legacy_piecewise_lstsq` centers;
+  cutoff-20 runs for `zero`, `random`, and `piecewise_lstsq` centers;
 - `jobs_to_send/reference_smoke_10min.slurm`: cluster environment/reference
   smoke check;
 - `jobs_to_send/reference_6h_legacy.slurm`: six-hour, full-physics,

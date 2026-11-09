@@ -10,7 +10,6 @@ set -euo pipefail
 RUN_LABEL="laptop_reference_init_$(date -u +%Y%m%dT%H%M%SZ)"
 COMMON_ARGS=(
   --physics-config config/reference_prof.json
-  --control-protocol reference
   --full-physics
   --duration 150
   --generations 80
@@ -19,7 +18,7 @@ COMMON_ARGS=(
   --seed 1234
 )
 
-for INIT_SCHEME in zero random legacy_piecewise_lstsq; do
+for INIT_SCHEME in zero random piecewise_lstsq; do
   uv run main/run_cmaes.py \
     "${COMMON_ARGS[@]}" \
     --initialization "$INIT_SCHEME" \

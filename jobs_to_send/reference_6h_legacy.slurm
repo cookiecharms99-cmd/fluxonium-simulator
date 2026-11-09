@@ -25,8 +25,7 @@ JOB_LABEL="${SLURM_JOB_ID:-local_$(date -u +%Y%m%dT%H%M%SZ)}"
 
 uv run python main/run_cmaes.py \
   --physics-config config/reference_prof.json \
-  --control-protocol reference \
-  --initialization legacy_piecewise_lstsq \
+  --initialization piecewise_lstsq \
   --full-physics \
   --duration 150 \
   --generations 10000 \

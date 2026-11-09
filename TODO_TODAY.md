@@ -3,19 +3,13 @@
 The completed record belongs in `Journal/`; this file is only the next
 actionable work.
 
-## First: consolidate control protocols
+## First: consolidate control configurations
 
-- [x] Replace duplicated joint/reference population fetchers with one explicit
-      protocol-control/evolution pathway. `reference` was independently checked
-      against the removed waveform/evolution formulation; its physics is
-      unchanged. Joint charge envelopes now use the intended full Fourier basis.
-
-- [x] Make protocol parameter count authoritative rather than relying on a
-      basis cache. `FluxoniumResetSimulator.parameter_count()` now derives it
-      from the declared protocol and coefficient counts. The eventual protocols
-      are fixed-charge flux-only, joint, and charge-only. -> UNDO LATER
-- [ ] Do not implement charge-only until we state whether its optimized drive
-      replaces the calibrated tone, modulates it, or adds a bounded correction. -> IGNORE
+- [x] Replace duplicated protocol APIs with one configuration-driven
+      control/evolution pathway. Runnable configurations declare active flux and
+      charge blocks; retired flat configs are rejected by tests.
+- [x] Define charge optimization as a full-Fourier correction around the fixed
+      calibrated carrier, and record final CMA-ES sigma in run artifacts.
 
 ## Then: diagnose the trusted 150-ns reference pulse
 

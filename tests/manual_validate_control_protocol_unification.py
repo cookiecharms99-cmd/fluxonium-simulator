@@ -34,19 +34,20 @@ def main() -> None:
         charge_drive=(params["physics"]["Omega"] / params["physics"]["n_ef"])
         * np.sin(params["physics"]["omega_ef"] * times),
     )
-    unified_waveform = simulator.controls(
-        flux_weights, times, control_protocol="reference"
-    )
+    unified_waveform = simulator.controls(flux_weights, times)
     np.testing.assert_allclose(
         unified_waveform.external_phase, legacy_waveform.external_phase
     )
-    np.testing.assert_allclose(unified_waveform.charge_drive, legacy_waveform.charge_drive)
+    np.testing.assert_allclose(
+        unified_waveform.charge_drive, legacy_waveform.charge_drive
+    )
 
     legacy_result = simulator._evolve_waveform(
         legacy_waveform, times, e_ops=[simulator.ground_projector]
     )
     unified_population = simulator.final_ground_population(
-        flux_weights, times, control_protocol="reference"
+        flux_weights,
+        times,
     )
     np.testing.assert_allclose(
         unified_population,

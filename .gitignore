@@ -43,6 +43,9 @@ playzone/__marimo__/
 local_scratch/*
 cluster_scratch/
 
+# Ignore plot photos for now!
+plot_photos/
+
 
 # Cluster logs
 # Ignore cluster logs for now

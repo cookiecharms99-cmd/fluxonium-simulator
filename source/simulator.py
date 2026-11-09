@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Sequence
 
-import control_initialization as control_inits
 import numpy as np
 import qutip as qt
 import scipy.sparse as sp
 from scqubits import Fluxonium
+
+from source import control_initialization as control_init
 
 
 def phase_from_flux(flux_quanta: float | np.ndarray) -> float | np.ndarray:
@@ -53,11 +54,9 @@ def charge_fourier_basis(times: np.ndarray, count: int) -> np.ndarray:
         row += 1
         if row < count:
             basis[row] = np.cos(2 * np.pi * k * times / duration)
+            row += 1
         k += 1
     return basis
-
-
-ControlProtocol = Literal["joint", "reference"]
 
 
 def validate_protocol_times(times: np.ndarray) -> np.ndarray:
@@ -94,14 +93,28 @@ class ControlWaveforms:
     charge_drive: np.ndarray
 
 
+@dataclass(frozen=True)
+class PathwayDiagnostics:
+    """Analysis-only populations for interpreting one completed control pulse.
+
+    ``instantaneous_populations`` use bare fluxonium eigenstates at the
+    waveform's current external phase, tensored with cavity Fock states. They
+    are diabatic labels, intentionally preserving the ``f0``/``g1`` pathway
+    labels through their avoided crossing.
+    """
+
+    instantaneous_populations: dict[str, np.ndarray]
+    cavity_photon_number: np.ndarray
+    trace: np.ndarray
+
+
 class FluxoniumResetSimulator:
     """Full fluxonium + one-photon cavity model for the active-reset study.
 
-    Joint-protocol ``weights`` have the layout ``[flux weights, charge-drive
-    weights]``.  Reference-protocol weights contain only flux coefficients;
-    that protocol keeps its calibrated charge tone fixed. Flux coefficients
-    perturb the idle phase pi, so sine control guarantees a pulse begins and
-    ends at the half-flux sweet spot.
+    Candidate ``weights`` have the layout ``[flux weights, charge weights]``.
+    The effective configuration declares the number of active coefficients in
+    each block. A missing flux block uses its declared fixed waveform; a
+    missing charge block leaves the calibrated charge tone unchanged.
 
     The model uses a fixed LC basis for fluxonium and a two-state cavity Fock
     basis. All frequency-like parameters and times must use one consistent
@@ -114,8 +127,9 @@ class FluxoniumResetSimulator:
         self.physics = params["physics"]
         self.settings = params["model_settings"]
         self.cutoff = int(self.settings["cutoff"])
-        self.n_flux_controls = int(self.settings.get("n_flux", 0))
-        self.n_charge_controls = int(self.settings.get("n_charge", 0))
+        self.control_settings = self._read_control_settings()
+        self.n_flux_controls = self.control_settings["flux"]["coefficient_count"]
+        self.n_charge_controls = self.control_settings["charge"]["coefficient_count"]
         self._flux_basis = None
         self._charge_basis = None
         self._times = None
@@ -141,8 +155,42 @@ class FluxoniumResetSimulator:
 
     @property
     def n_controls(self) -> int:
-        """Number of coefficients in the exploratory joint protocol."""
+        """Number of active optimization coefficients in this configuration."""
         return self.n_flux_controls + self.n_charge_controls
+
+    def _read_control_settings(self) -> dict[str, dict[str, object]]:
+        """Validate the one supported control-configuration schema.
+
+        Every runnable configuration declares ``model_settings.controls`` with
+        ``flux`` and ``charge`` blocks. Historical artifacts retain their full
+        saved configuration, but are not silently accepted as new inputs.
+        """
+        configured = self.settings.get("controls")
+        if not isinstance(configured, dict):
+            raise ValueError(
+                "model_settings.controls must declare flux and charge control blocks."
+            )
+        normalized: dict[str, dict[str, object]] = {}
+        for name in ("flux", "charge"):
+            section = configured.get(name)
+            if not isinstance(section, dict) or "coefficient_count" not in section:
+                raise ValueError(
+                    "model_settings.controls."
+                    f"{name} must be an object with coefficient_count."
+                )
+            count = int(section["coefficient_count"])
+            if count < 0:
+                raise ValueError(f"{name} coefficient_count cannot be negative.")
+            normalized[name] = {
+                "coefficient_count": count,
+                "fixed_default": section.get("fixed_default", "idle"),
+                "saved_controls_path": section.get("saved_controls_path"),
+                "fixed_harmonic_count": section.get("fixed_harmonic_count"),
+                "random_seed": section.get("random_seed"),
+                "random_scale": section.get("random_scale"),
+                "mode": section.get("mode", "calibrated_plus_fourier_correction"),
+            }
+        return normalized
 
     def build_static_system(self) -> None:
         """Build operators once in the fixed LC x {|0>, |1>} basis."""
@@ -178,10 +226,16 @@ class FluxoniumResetSimulator:
         # SHO Hamiltonian bit
         levels = np.arange(cutoff, dtype=float) + 0.5
         h_LC_sparse = sp.diags(self.physics["omega_lc"] * levels, 0, format="csr")
+        self._h_lc_flux = h_LC_sparse
+        self._cos_phi_flux = cos_f
+        self._sin_phi_flux = sin_f
 
         # Cavity term: frequency * (I_flux @ n_c) where n_c = a_c.dag @ a_c = [[0, 0], [0, 1]]
         # Cookie note: Why is line above like that? I really thought it was a_c
         n_c = sp.csr_matrix(([1.0], ([1], [1])), shape=(2, 2))
+        self.cavity_number_operator = qt.Qobj(
+            sp.kron(I_flux, n_c, format="csr"), dims=dims
+        )
         h_cavity_sparse = self.physics["cavity"]["frequency"] * sp.kron(
             I_flux, n_c, format="csr"
         )
@@ -243,39 +297,51 @@ class FluxoniumResetSimulator:
         }
         return {name: qt.ket2dm(state) for name, state in states.items()}
 
-    def get_flux_default(self, times: np.ndarray, protocol=None, **kwargs):
-        if protocol is None:
+    def fixed_flux_waveform(self, times: np.ndarray) -> np.ndarray:
+        """Return the configured flux waveform when flux is not optimized."""
+        default = self.control_settings["flux"]["fixed_default"]
+
+        if default in (None, "idle"):
             return np.full_like(times, self.idle_phase)
-        elif protocol == "piecewise":
-            return control_inits.piecewise_pulse_init(times)
-        elif protocol == "warm_copy":
-            return control_inits.copy_pulse(kwargs["pulse_copy"])
-        else:
-            raise NotImplementedError("default protocol not yet implemented sorry! :(")
+
+        if default == "piecewise":
+            return control_init.piecewise_pulse_init(times, idle_flux=self.idle_phase)
+
+        if default == "random_sine":
+            harmonic_count = self.control_settings["flux"]["fixed_harmonic_count"]
+            seed = self.control_settings["flux"]["random_seed"]
+            scale = self.control_settings["flux"]["random_scale"]
+            if harmonic_count is None or seed is None or scale is None:
+                raise ValueError(
+                    "A random-sine flux default requires fixed_harmonic_count, "
+                    "random_seed, and random_scale."
+                )
+            fixed_weights = np.random.default_rng(int(seed)).normal(
+                0.0, float(scale), size=int(harmonic_count)
+            )
+            return self.idle_phase + fixed_weights @ sine_basis(
+                times, int(harmonic_count)
+            )
+        if default in ("saved_controls", "warm_copy", "warm_save"):
+            saved_path = self.control_settings["flux"]["saved_controls_path"]
+            if saved_path is None:
+                raise ValueError(
+                    "A saved-controls flux default requires saved_controls_path."
+                )
+            return control_init.load_saved_flux_waveform(saved_path, times)
+        raise ValueError(f"Unknown fixed flux default: {default!r}.")
 
     def controls(
         self,
         weights: Sequence[float],
         times: np.ndarray,
-        *,
-        flux_default_protocol=None,
-        **kwargs,
     ) -> ControlWaveforms:
-        """Reconstruct the controls selected by one explicit protocol.
-            When n_flux_controls is 0, fallback to a specified (or not) default protocol
-            When n_charge_controls is 0, fallback to a specified (or not) default protocol!
-
-
-        .
-            TODO: perhaps implement something similar for charge when it gets optimized for.
-
-            Charge for now is A(t)sin(wt) where A(t) is our defaulted object of interest.
-            For now we have A(t) = A_0 + X_charge * fourier-Basis
-        """
+        """Build controls from this configuration's active coefficient blocks."""
         weights = np.asarray(weights, dtype=float)
         expected_count = self.n_controls
         if weights.shape != (expected_count,):
             raise ValueError(f"Expected {expected_count} weights, got {weights.shape}.")
+
         times = validate_protocol_times(times)
 
         # Flux and charge bases share a time grid but have independent harmonic
@@ -286,20 +352,25 @@ class FluxoniumResetSimulator:
             self._times = times.copy()
 
         if self.n_flux_controls == 0:
-            flux_control = self.get_flux_default(flux_default_protocol, **kwargs)
+            flux_control = self.fixed_flux_waveform(times)
         else:
             flux_control = (
                 self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
             )
 
-        # carrier mode for now!
         carrier = np.sin(float(self.physics["omega_ef"]) * times)
         envelope_default = float(self.physics["Omega"]) / float(self.physics["n_ef"])
+        charge_mode = self.control_settings["charge"]["mode"]
+
+        if charge_mode != "calibrated_plus_fourier_correction":
+            raise ValueError(f"Unsupported charge-control mode: {charge_mode!r}.")
+
         if self.n_charge_controls == 0:
             envelope = envelope_default
         else:
             delta_envelope = weights[self.n_flux_controls :] @ self._charge_basis
             envelope = envelope_default + delta_envelope
+
         charge_control = envelope * carrier
 
         return ControlWaveforms(
@@ -338,7 +409,6 @@ class FluxoniumResetSimulator:
         weights: Sequence[float],
         times: np.ndarray,
         *,
-        control_protocol: ControlProtocol = "joint",
         initial_state: qt.Qobj | None = None,
         e_ops: Sequence[qt.Qobj] | None = None,
         cavity_decay_rate: float | None = None,
@@ -361,11 +431,16 @@ class FluxoniumResetSimulator:
         initial_state: qt.Qobj | None = None,
         e_ops: Sequence[qt.Qobj] | None = None,
         cavity_decay_rate: float | None = None,
+        store_states: bool = False,
     ):
         """Evolve preconstructed controls using the shared device model."""
         c_ops = self.c_ops
         if cavity_decay_rate is not None:
             c_ops = self.collapse_operators(cavity_decay_rate)
+
+        options = dict(self.solver_options)
+        if store_states:
+            options["store_states"] = True
 
         return qt.mesolve(
             self.hamiltonian(waveform),
@@ -373,47 +448,32 @@ class FluxoniumResetSimulator:
             times,
             c_ops=c_ops,
             e_ops=e_ops,
-            options=self.solver_options,
+            options=options,
         )
 
     def final_ground_population(
         self,
         weights: Sequence[float],
         times: np.ndarray,
-        *,
-        control_protocol: ControlProtocol = "joint",
     ) -> float:
         """Return the final P(g, 0) at the idle bias; the reset objective."""
-        result = self.evolve(
-            weights,
-            times,
-            control_protocol=control_protocol,
-            e_ops=[self.ground_projector],
-        )
+        result = self.evolve(weights, times, e_ops=[self.ground_projector])
         return float(np.real(result.expect[0][-1]))
 
-    def ground_population(
-        self,
-        weights: Sequence[float],
-        times: np.ndarray,
-        *,
-        control_protocol: ControlProtocol = "joint",
-    ) -> np.ndarray:
-        """Return the idle-basis ground-state population P(g, 0)[t]."""
-        result = self.evolve(
-            weights,
-            times,
-            control_protocol=control_protocol,
-            e_ops=[self.ground_projector],
-        )
-        return np.real(result.expect[0])
+    # I will comment this out for now because I do not think it is needed anymore.
+    # def ground_population(
+    #     self,
+    #     weights: Sequence[float],
+    #     times: np.ndarray,
+    # ) -> np.ndarray:
+    #     """Return the idle-basis ground-state population P(g, 0)[t]."""
+    #     result = self.evolve(weights, times, e_ops=[self.ground_projector])
+    #     return np.real(result.expect[0])
 
     def pathway_populations(
         self,
         weights: Sequence[float],
         times: np.ndarray,
-        *,
-        control_protocol: ControlProtocol = "joint",
     ) -> dict[str, np.ndarray]:
         """Return selected idle-basis populations along the reset pathway.
 
@@ -424,10 +484,72 @@ class FluxoniumResetSimulator:
         result = self.evolve(
             weights,
             times,
-            control_protocol=control_protocol,
             e_ops=[projectors[name] for name in names],
         )
         return {name: np.real(result.expect[index]) for index, name in enumerate(names)}
+
+    def _instantaneous_flux_eigenvectors(
+        self, external_phase: float, levels: int = 3
+    ) -> np.ndarray:
+        """Return bare-fluxonium LC-basis eigenvectors at one external phase."""
+        if levels > self.cutoff:
+            raise ValueError("Cannot request more fluxonium levels than the cutoff.")
+        h_flux = (
+            self._h_lc_flux
+            - self.physics["EJ"] * np.cos(external_phase) * self._cos_phi_flux
+            + self.physics["EJ"] * np.sin(external_phase) * self._sin_phi_flux
+        )
+        _, eigenvectors = np.linalg.eigh(h_flux.toarray())
+        return eigenvectors[:, :levels]
+
+    def pathway_diagnostics(
+        self,
+        weights: Sequence[float],
+        times: np.ndarray,
+    ) -> PathwayDiagnostics:
+        """Return static-reference and instantaneous pathway diagnostics.
+
+        This method is intentionally for post-run analysis, not CMA-ES. It
+        stores the trajectory and diagonalizes a small bare-fluxonium matrix at
+        each requested time so the plotted ``g/e/f`` labels follow the flux.
+        """
+        times = validate_protocol_times(times)
+        waveform = self.controls(weights, times)
+        result = self._evolve_waveform(waveform, times, store_states=True)
+        if len(result.states) != len(times):
+            raise RuntimeError("Pathway diagnostics require one stored state per time.")
+
+        labels = {"g0": (0, 0), "e0": (1, 0), "f0": (2, 0), "g1": (0, 1)}
+
+        instantaneous_populations = {
+            name: np.empty(len(times), dtype=float) for name in labels
+        }
+
+        cavity_photon_number = np.empty(len(times), dtype=float)
+        trace = np.empty(len(times), dtype=float)
+
+        for index, (state, phase) in enumerate(
+            zip(result.states, waveform.external_phase)
+        ):
+            eigenvectors = self._instantaneous_flux_eigenvectors(float(phase))
+            density_matrix = state.full()
+            for name, (level, photons) in labels.items():
+                cavity_state = np.zeros(2)
+                cavity_state[photons] = 1.0
+                ket = np.kron(eigenvectors[:, level], cavity_state)
+                instantaneous_populations[name][index] = float(
+                    np.real(np.vdot(ket, density_matrix @ ket))
+                )
+            cavity_photon_number[index] = float(
+                np.real(qt.expect(self.cavity_number_operator, state))
+            )
+            trace[index] = float(np.real(state.tr()))
+
+        return PathwayDiagnostics(
+            instantaneous_populations=instantaneous_populations,
+            cavity_photon_number=cavity_photon_number,
+            trace=trace,
+        )
 
 
 if __name__ == "__main__":

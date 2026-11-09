@@ -73,10 +73,20 @@ def build_parser() -> argparse.ArgumentParser:
     list_runs.add_argument("--match", help="Only show names containing this text.")
 
     run = subparsers.add_parser("run", help="Launch CMA-ES with friendly defaults.")
-    run.add_argument("--protocol", choices=("reference", "joint"), default="reference")
+    run.add_argument(
+        "--physics-config",
+        default="config/reference_prof.json",
+        help="Control/device configuration passed to the CMA-ES runner.",
+    )
     run.add_argument(
         "--init",
-        choices=("zero", "random", "piecewise_lstsq", "warm_start"),
+        choices=(
+            "zero",
+            "random",
+            "random_flux_zero_charge",
+            "piecewise_lstsq",
+            "warm_start",
+        ),
         default="zero",
         help="CMA-ES center; warm_start additionally requires --warm-start.",
     )
@@ -140,20 +150,14 @@ def run_campaign(args: argparse.Namespace) -> None:
     if args.init != "warm_start" and args.warm_start is not None:
         raise ValueError("--warm-start is only valid with --init warm_start.")
 
-    physics_config = (
-        "config/reference_prof.json"
-        if args.protocol == "reference"
-        else "config/joint_exploratory.json"
-    )
     tier = "full" if args.full_physics else "smoke"
-    automatic_label = f"{args.protocol}-{args.duration:g}ns-{args.init}-{tier}"
+    config_label = Path(args.physics_config).stem
+    automatic_label = f"{config_label}-{args.duration:g}ns-{args.init}-{tier}"
     command = [
         sys.executable,
         "main/run_cmaes.py",
         "--physics-config",
-        physics_config,
-        "--control-protocol",
-        args.protocol,
+        args.physics_config,
         "--initialization",
         args.init,
         "--duration",

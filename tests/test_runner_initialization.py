@@ -13,58 +13,47 @@ from main.run_cmaes import (
 from source.simulator import sine_basis
 
 
-class TinyReferenceSimulator:
+class TinySimulator:
     """Only the runner-facing simulator attributes needed for this fast test."""
 
     n_controls = 6
     n_flux_controls = 4
     idle_phase = np.pi
 
-    def parameter_count(self, control_protocol: str) -> int:
-        if control_protocol == "reference":
-            return self.n_flux_controls
-        if control_protocol == "joint":
-            return self.n_controls
-        raise ValueError(control_protocol)
-
-    def final_ground_population(
-        self, weights, times, *, control_protocol="joint"
-    ) -> float:
-        return 0.11 if control_protocol == "joint" else 0.22
+    def final_ground_population(self, weights, times) -> float:
+        return 0.11
 
 
-def test_runner_builds_piecewise_projected_reference_center() -> None:
+def test_runner_builds_piecewise_projected_center() -> None:
     """Catch API drift between the runner and pulse/basis helper functions."""
-    simulator = TinyReferenceSimulator()
+    simulator = TinySimulator()
     times = np.linspace(0.0, DEFAULT_DURATION, 501)
-    weights = np.zeros(simulator.n_flux_controls)
+    weights = np.zeros(simulator.n_controls)
 
     fill_initial_weights(
         initialization="piecewise_lstsq",
-        control_protocol="reference",
         seed=1234,
         simulator=simulator,
         times=times,
         initial_weights=weights,
     )
 
-    assert weights.shape == (simulator.n_flux_controls,)
-    reconstructed_phase = simulator.idle_phase + weights @ sine_basis(
+    reconstructed_phase = simulator.idle_phase + weights[: simulator.n_flux_controls] @ sine_basis(
         times, count=simulator.n_flux_controls
     )
     np.testing.assert_allclose(
         reconstructed_phase[[0, -1]], simulator.idle_phase, atol=1e-12
     )
+    np.testing.assert_array_equal(weights[simulator.n_flux_controls :], 0.0)
 
 
 def test_runner_piecewise_center_keeps_joint_charge_weights_zero() -> None:
     """The same flux guess may seed joint control without enabling charge tuning."""
-    simulator = TinyReferenceSimulator()
+    simulator = TinySimulator()
     weights = np.zeros(simulator.n_controls)
 
     fill_initial_weights(
         initialization="piecewise_lstsq",
-        control_protocol="joint",
         seed=1234,
         simulator=simulator,
         times=np.linspace(0.0, DEFAULT_DURATION, 11),
@@ -75,38 +64,51 @@ def test_runner_piecewise_center_keeps_joint_charge_weights_zero() -> None:
     np.testing.assert_array_equal(weights[simulator.n_flux_controls :], 0.0)
 
 
-def test_runner_rejects_wrong_protocol_vector_length() -> None:
-    with pytest.raises(ValueError, match="Expected 4 initial weights"):
+def test_runner_can_seed_random_flux_without_a_charge_correction() -> None:
+    simulator = TinySimulator()
+    weights = np.zeros(simulator.n_controls)
+
+    fill_initial_weights(
+        initialization="random_flux_zero_charge",
+        seed=1234,
+        simulator=simulator,
+        times=np.linspace(0.0, DEFAULT_DURATION, 11),
+        initial_weights=weights,
+    )
+
+    assert np.any(weights[: simulator.n_flux_controls] != 0.0)
+    np.testing.assert_array_equal(weights[simulator.n_flux_controls :], 0.0)
+
+
+def test_runner_rejects_wrong_vector_length() -> None:
+    with pytest.raises(ValueError, match="Expected 6 initial weights"):
         fill_initial_weights(
             initialization="zero",
-            control_protocol="reference",
             seed=1234,
-            simulator=TinyReferenceSimulator(),
+            simulator=TinySimulator(),
             times=np.linspace(0.0, DEFAULT_DURATION, 11),
-            initial_weights=np.zeros(TinyReferenceSimulator.n_controls),
+            initial_weights=np.zeros(4),
         )
 
 
-def test_runner_evaluates_the_center_through_the_selected_protocol() -> None:
-    simulator = TinyReferenceSimulator()
-    weights = np.zeros(simulator.n_flux_controls)
+def test_runner_evaluates_the_configured_center() -> None:
+    simulator = TinySimulator()
+    weights = np.zeros(simulator.n_controls)
     times = np.linspace(0.0, DEFAULT_DURATION, 11)
 
-    assert evaluate_protocol_center(simulator, "joint", weights, times) == 0.11
-    assert evaluate_protocol_center(simulator, "reference", weights, times) == 0.22
+    assert evaluate_protocol_center(simulator, weights, times) == 0.11
 
 
 def test_runner_warm_start_copies_compatible_weights(tmp_path) -> None:
-    source_weights = np.array([0.2, -0.1, 0.05, 0.03])
+    source_weights = np.linspace(-0.1, 0.2, TinySimulator.n_controls)
     source_path = tmp_path / "parent_best_weights.npy"
     np.save(source_path, source_weights)
     child_weights = np.zeros_like(source_weights)
 
     fill_initial_weights(
         initialization="warm_start",
-        control_protocol="reference",
         seed=1234,
-        simulator=TinyReferenceSimulator(),
+        simulator=TinySimulator(),
         times=np.linspace(0.0, DEFAULT_DURATION, 11),
         initial_weights=child_weights,
         warm_start_path=source_path,
@@ -116,20 +118,19 @@ def test_runner_warm_start_copies_compatible_weights(tmp_path) -> None:
 
 
 def test_runner_warm_start_rejects_missing_or_incompatible_source(tmp_path) -> None:
-    simulator = TinyReferenceSimulator()
+    simulator = TinySimulator()
     common_arguments = {
         "initialization": "warm_start",
-        "control_protocol": "reference",
         "seed": 1234,
         "simulator": simulator,
         "times": np.linspace(0.0, DEFAULT_DURATION, 11),
-        "initial_weights": np.zeros(simulator.n_flux_controls),
+        "initial_weights": np.zeros(simulator.n_controls),
     }
 
     with pytest.raises(ValueError, match="--warm-start is required"):
         fill_initial_weights(**common_arguments)
 
     mismatched_path = tmp_path / "wrong_size.npy"
-    np.save(mismatched_path, np.zeros(simulator.n_controls))
+    np.save(mismatched_path, np.zeros(simulator.n_controls - 1))
     with pytest.raises(ValueError, match="shape does not match"):
         fill_initial_weights(**common_arguments, warm_start_path=mismatched_path)
