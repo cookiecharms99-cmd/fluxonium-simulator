@@ -1,0 +1,41 @@
+{
+  "physics": {
+    "EJ": 4.164,
+    "EC": 1.531,
+    "EL": 0.685,
+    "Omega": 0.213,
+    "omega_lc": 2.89652896,
+    "omega_ef": 1.78991881,
+    "cavity": {
+      "frequency": 6.5172172187,
+      "coupling": 0.46932079985285463,
+      "decay_rate": 0.15707963267948966
+    },
+    "n_ef": 0.304437775,
+    "n_gf": 0.374859134,
+    "flux_vals": {
+      "idle_flux": 0.5,
+      "interaction_flux": 0.25
+    }
+  },
+  "model_settings": {
+    "cutoff": 15,
+    "num_t_steps": 500,
+    "qutip_opts": {
+      "qutip_nsteps": 20000,
+      "qutip_atol": 1e-8,
+      "qutip_rtol": 1e-6,
+      "qutip_method": null
+    },
+    "controls": {
+      "flux": {
+        "coefficient_count": 60,
+        "fixed_default": "idle"
+      },
+      "charge": {
+        "coefficient_count": 0,
+        "mode": "calibrated_plus_fourier_correction"
+      }
+    }
+  }
+}

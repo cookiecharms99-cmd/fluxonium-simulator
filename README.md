@@ -48,7 +48,7 @@ For fluxonium cutoff 20, the combined Hilbert-space dimension is 40.
 
 Flux controls use sine coefficients, while the exploratory joint charge control
 uses an independent full-Fourier envelope (constant, then sine/cosine pairs)
-multiplying the configured ``sin(omega_ef * t)`` carrier. The charge envelope
+multiplying the configured `sin(omega_ef * t)` carrier. The charge envelope
 is deliberately not constrained to vanish at the pulse endpoints. The flux
 phase has the form
 
@@ -59,7 +59,7 @@ so the pulse automatically begins and ends at the half-flux idle point. The
 project simulator can optimize both flux and charge-drive coefficients. The
 professor's reference implementation optimizes only the flux pulse and keeps
 the calibrated charge drive fixed at
-``(Omega / n_ef) * sin(omega_ef * t)``. The full-Fourier joint basis supersedes
+`(Omega / n_ef) * sin(omega_ef * t)`. The full-Fourier joint basis supersedes
 the previous sine-only exploratory charge basis, so old joint-control weights
 must not be treated as directly reproducible under this new parameterization.
 
@@ -80,7 +80,7 @@ The optimization objective is the final ground-state population
 | `main/run_cmaes.py`                         | Command-line entry point for small or full-physics CMA-ES runs.                                   |
 | `tests/`                                    | Automated numerical and multiprocessing integration checks.                                       |
 | `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
-| `config/legacy_configs/baseline_reset.json` | Historical pre-refactor baseline description; not a runnable simulator config.                   |
+| `config/legacy_configs/baseline_reset.json` | Historical pre-refactor baseline description; not a runnable simulator config.                    |
 | `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
 | `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.    |
 | `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
@@ -128,6 +128,8 @@ uv run python main/flux.py list-runs --match warm
 uv run python main/flux.py plot --run warm_start_4779342
 uv run python main/flux.py audit --run warm_start_4779342 --cutoffs 20 40
 
+
+
 # Preview a full-physics 140-ns warm-start command without launching it.
 uv run python main/flux.py run --protocol reference --init warm_start \
   --warm-start data/output/cmaes/reference_6h_legacy_4776599/best_weights.npy \
@@ -136,6 +138,23 @@ uv run python main/flux.py run --protocol reference --init warm_start \
 
 Use `run`, `audit`, `plot`, or `benchmark` after `main/flux.py`; each forwards
 to the underlying trusted script and prints that exact command first.
+
+**Alternative: just & fzf**
+
+I also setup a justfile!
+
+Notable ones!
+
+```bash
+just ez_plot (optional)--save (optional)--population-cutoff [n]
+just pull-cluster-data (well this is for me lol but anyone can write their own endpoint in the justfile locally! :))
+just ez_cutoff_audit
+just latest_data
+```
+
+Or do `just` in general to see the full list!
+
+It requires: just, fzf, batcat, maybe more?
 
 ## Advanced commands
 
@@ -156,18 +175,7 @@ uv run main/run_cmaes.py \
   --generations 5 --popsize 4 --workers 2
 ```
 
-Without `--full-physics`, the runner uses fast cutoff-8 smoke settings. The
-reference config activates 40 flux coefficients and keeps the calibrated charge
-drive fixed; a joint config activates both blocks.
-Choose the CMA-ES center explicitly with `--initialization zero`, `random`, or
-`piecewise_lstsq`; the professor-inspired projected waveform is defined only for
-the 150-ns, flux-active configuration.
-
-For Athene, submit `jobs_to_send/reference_smoke_10min.slurm` first. After it
-finishes with complete artifacts, `jobs_to_send/reference_6h_legacy.slurm`
-launches the bounded six-hour full-physics reference campaign. The local
-equal-budget initialization comparison is
-`scripts/run_reference_initialization_compare.sh`.
+Local runs are in scripts/ and HPC cluster ones are in jobs_to_send/
 
 ## Current findings
 
@@ -175,11 +183,8 @@ equal-budget initialization comparison is
 - At quarter flux, the calculated charge matrix elements agree closely with the stored calibrated values: ($|\langle e|n|f\rangle|\approx0.3044204$) and ($|\langle g|n|f\rangle|\approx0.3748523$).
 - At ($0.25,\Phi_0$), the bare ($g\to f$) transition is about 31.23 MHz detuned from the configured cavity frequency.
 - The coupled spectrum shows the expected avoided crossing between the states dominated by ($|f,0\rangle$) and ($|g,1\rangle$).
-- Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed.
-- The reference CMA-ES execution path supports serial and multiprocessing
-  evaluation, checkpointed controls, and fresh-simulator reproduction. It has
-  passed a cutoff-8 smoke run; cutoff-20 scientific baseline scores are still
-  pending.
+- Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed by a tiny bit! :]
+- A cutoff of 13 is perfectly fine for a goal of 0.99, so for any runs seeking that, 13 suffices :),
 - I was able to reach 0.99 fidelity for flux-only optimized circuit for T = 140ns.
 - Unverified: noticing common themes for good solutions towards the beginning interestingly enough
 
@@ -188,23 +193,3 @@ See the analysis in `playzone/fluxonium_audit.py`. Run this from root
 ```bash
 uv run marimo edit playzone/fluxonium_audit.py
 ```
-
-## Open questions
-
-The following must be resolved or validated before numerical optimization results are treated as final:
-
-- Confirm the cycles-per-nanosecond versus radians-per-nanosecond convention for every stored frequency and for QuTiP evolution.
-- Confirm the physical origin and units of the cavity decay parameter currently represented as ($\kappa=2\pi/40$), with collapse operator ($\sqrt{\kappa},a$).
-- Preserve the distinction between the experimental quarter-flux calibration and the model-derived bare resonance. (though maybe not super meaningful)
-- Validate the one-photon cavity truncation dynamically.
-- Record the source and hash of every CMA-ES initial coefficient vector.
-
-## Optimization plan
-
-1. Finish the simulator physics audit and resolve unit conventions.
-2. Freeze a trusted reference simulator and reproducible CMA-ES baseline.
-3. Profile objective evaluations and optimize implementation details without changing the modeled physics.
-4. Search for shorter pulses that reach the target ground-state population.
-5. Compare CMA-ES, intuitive pulses, and any reinforcement-learning approach under equal simulator-evaluation and wall-clock budgets.
-
-Reinforcement learning is not assumed to be better. It will be most compelling if it offers transfer across a family of device parameters, robustness, or useful feedback behavior rather than merely optimizing one fixed open-loop pulse.

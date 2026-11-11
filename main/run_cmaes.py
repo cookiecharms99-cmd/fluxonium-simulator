@@ -98,12 +98,10 @@ def fill_initial_weights(
         )
     elif initialization == "random_flux_zero_charge":
         if simulator.n_flux_controls == 0:
-            raise ValueError(
-                "random_flux_zero_charge needs active flux coefficients."
-            )
-        initial_weights[: simulator.n_flux_controls] = np.random.default_rng(seed).normal(
-            0.0, 0.1, size=simulator.n_flux_controls
-        )
+            raise ValueError("random_flux_zero_charge needs active flux coefficients.")
+        initial_weights[: simulator.n_flux_controls] = np.random.default_rng(
+            seed
+        ).normal(0.0, 0.1, size=simulator.n_flux_controls)
         initial_weights[simulator.n_flux_controls :] = 0.0
     elif initialization == "piecewise_lstsq":
         if simulator.n_flux_controls == 0:
@@ -120,7 +118,6 @@ def fill_initial_weights(
                 idle_phase=simulator.idle_phase,
             )
         )
-
 
     elif initialization == "warm_start":
         if warm_start_path is None:
@@ -214,6 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
             "yet supported."
         ),
     )
+    parser.add_argument(
+        "--flux-count",
+        type=int,
+        help=("Override config value with the specified value <3"),
+    )
     return parser
 
 
@@ -228,6 +230,11 @@ def main() -> None:
     # optimizer_path = PROJECT_ROOT / "config" / "model_config" / "cmaes_config.json"
 
     physics_config = load_json(physics_path)
+
+    if args.flux_count:
+        physics_config["model_settings"]["controls"]["flux"]["coefficient_count"] = (
+            args.flux_count
+        )
     # optimizer_config = load_json(optimizer_path)
     if not args.full_physics:
         physics_config = make_smoke_config(physics_config)
