@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-import control_initialization as control_init
 import numpy as np
 import qutip as qt
 import scipy.sparse as sp
 from scqubits import Fluxonium
+
+from . import control_initialization as control_init
 
 
 def phase_from_flux(flux_quanta: float | np.ndarray) -> float | np.ndarray:
