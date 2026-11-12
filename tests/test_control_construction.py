@@ -30,6 +30,7 @@ def test_runnable_configs_use_explicit_control_blocks() -> None:
         "charge_only_idle_150ns.json",
         "charge_only_random_flux_150ns.json",
         "charge_only_good_flux_150ns.json",
+        "charge_only_good_flux_150ns_cutoff20.json",
     ):
         with (project_root / "config" / name).open(encoding="utf-8") as file:
             settings = json.load(file)["model_settings"]

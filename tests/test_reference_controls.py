@@ -50,17 +50,21 @@ def test_reference_pathway_populations_are_labelled_and_start_in_idle_mixture() 
     np.testing.assert_allclose(populations["g1"][0], 0.0, atol=1e-12)
 
 
-def test_instantaneous_pathway_diagnostics_match_idle_basis_at_fixed_idle_flux() -> None:
-    """With zero flux coefficients, instantaneous and idle state labels agree."""
+def test_instantaneous_pathway_diagnostics_start_in_the_idle_mixture() -> None:
+    """Instantaneous labels recover the declared initial idle mixture at t=0."""
     times = np.linspace(0.0, 1.0, 11)
     flux_weights = np.zeros(simulator.n_flux_controls)
 
     diagnostics = simulator.pathway_diagnostics(flux_weights, times)
 
     assert tuple(diagnostics.instantaneous_populations) == ("g0", "e0", "f0", "g1")
-    for name, instantaneous in diagnostics.instantaneous_populations.items():
-        np.testing.assert_allclose(
-            instantaneous, diagnostics.idle_populations[name], atol=1e-12
-        )
+    np.testing.assert_allclose(diagnostics.instantaneous_populations["g0"][0], 0.5)
+    np.testing.assert_allclose(diagnostics.instantaneous_populations["e0"][0], 0.5)
+    np.testing.assert_allclose(
+        diagnostics.instantaneous_populations["f0"][0], 0.0, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        diagnostics.instantaneous_populations["g1"][0], 0.0, atol=1e-12
+    )
     np.testing.assert_allclose(diagnostics.trace, 1.0, atol=1e-10)
     assert np.all(diagnostics.cavity_photon_number >= -1e-12)

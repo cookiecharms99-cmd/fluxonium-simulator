@@ -76,6 +76,19 @@ def evaluate_protocol_center(
     return simulator.final_ground_population(weights, times)
 
 
+def initial_sigma0(
+    initial_fidelity: float | None = None, default_sigma0=0.3, min_sigma0=0.015
+) -> float:
+    """
+    figures out what the initial sigma going into CMAES should be :)
+    """
+    if initial_fidelity is not None and initial_fidelity > 0.50:
+        loss = max(1 - initial_fidelity, 1e-6)
+        scaled_sigma0 = default_sigma0 * np.sqrt(loss / 0.50)
+        return float(np.clip(scaled_sigma0, a_min=min_sigma0, a_max=default_sigma0))
+    return default_sigma0
+
+
 def fill_initial_weights(
     simulator: FluxoniumResetSimulator,
     initialization: str,
@@ -198,8 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sigma0",
         type=float,
-        default=0.3,
-        help=("Provide the initial std dev of the dist for cmaes :3"),
+        help=("Provide the initial default std dev of the dist for cmaes :3"),
     )
     parser.add_argument(
         "--warm-start",
@@ -214,7 +226,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--flux-count",
         type=int,
-        help=("Override config value with the specified value <3"),
+        help=(
+            "Override the configuration's active flux-coefficient count for this run. "
+            "Use 0 to hold the configured fixed flux waveform."
+        ),
     )
     return parser
 
@@ -231,7 +246,9 @@ def main() -> None:
 
     physics_config = load_json(physics_path)
 
-    if args.flux_count:
+    if args.flux_count is not None:
+        if args.flux_count < 0:
+            raise ValueError("--flux-count must be non-negative.")
         physics_config["model_settings"]["controls"]["flux"]["coefficient_count"] = (
             args.flux_count
         )
@@ -243,6 +260,7 @@ def main() -> None:
     num_steps = int(physics_config["model_settings"]["num_t_steps"])
     times = np.linspace(0.0, args.duration, num_steps)
     coefficient_count = simulator.n_controls
+
     initial_weights = np.zeros(coefficient_count)
     fill_initial_weights(
         initialization=args.initialization,
@@ -286,9 +304,9 @@ def main() -> None:
             "population_size": args.popsize,
             "workers": args.workers,
             "seed": args.seed,
-            "sigma0": float(args.sigma0),
             "duration_ns": args.duration,
             "time_steps": num_steps,
+            "flux_count_override": args.flux_count,
             "initialization_scheme": args.initialization,
             "warm_start_weights_path": (
                 args.warm_start if args.initialization == "warm_start" else None
@@ -317,6 +335,15 @@ def main() -> None:
         simulator, initial_weights, times
     )
     metadata["initial_center_population"] = initial_center_population
+    if args.sigma0 is not None:
+        sigma0 = args.sigma0
+    else:
+        sigma0 = initial_sigma0(
+            initial_fidelity=initial_center_population,
+            default_sigma0=0.3,
+            min_sigma0=0.015,
+        )
+    metadata["run_parameters"]["sigma0"] = sigma0
     write_json(output_path / "metadata.json", metadata)
     print(f"Initial center P(g, 0): {initial_center_population:.6f}")
 
@@ -397,7 +424,7 @@ def main() -> None:
             times,
             generations=args.generations,
             population_size=args.popsize,
-            sigma0=args.sigma0,
+            sigma0=sigma0,
             seed=args.seed,
             workers=args.workers,
             initial_weights=initial_weights,

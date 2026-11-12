@@ -184,7 +184,7 @@ Local runs are in scripts/ and HPC cluster ones are in jobs_to_send/
 - At ($0.25,\Phi_0$), the bare ($g\to f$) transition is about 31.23 MHz detuned from the configured cavity frequency.
 - The coupled spectrum shows the expected avoided crossing between the states dominated by ($|f,0\rangle$) and ($|g,1\rangle$).
 - Initial timing tests suggest that caching static physics and using sparse operators materially improve objective-evaluation speed by a tiny bit! :]
-- A cutoff of 13 is perfectly fine for a goal of 0.99, so for any runs seeking that, 13 suffices :),
+- A cutoff of 13 is perfectly fine for a goal of 0.99, so for any runs seeking that, 13 suffices :), 8 is entirely unaccurate so it's just for checking consistency and functionality (not to be interpreted for anything physically haha!)
 - I was able to reach 0.99 fidelity for flux-only optimized circuit for T = 140ns.
 - Unverified: noticing common themes for good solutions towards the beginning interestingly enough
 

@@ -146,15 +146,17 @@ def plot_run(
 
     if history:
         axes[0].plot(
-            history["generation"], history["best_reward_ever"], label="best ever"
+            history["generation"],
+            np.log(1 - history["best_reward_ever"] + 1e-6),
+            label="best ever",
         )
         axes[0].plot(
             history["generation"],
-            history["best_reward_generation"],
+            np.log(1 - history["best_reward_generation"] + 1e-6),
             alpha=0.6,
             label="generation best",
         )
-        axes[0].set_ylabel("P(g, 0)")
+        axes[0].set_ylabel("log(1-P(g, 0))")
         axes[0].set_xlabel("generation")
         axes[0].legend()
     else:

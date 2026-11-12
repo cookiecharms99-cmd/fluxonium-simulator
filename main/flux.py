@@ -96,7 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--popsize", type=int, default=4)
     run.add_argument("--workers", type=int, default=2)
     run.add_argument("--seed", type=int, default=1234)
-    run.add_argument("--sigma0", type=float, default=0.3)
+    run.add_argument(
+        "--sigma0",
+        type=float,
+        help="Optional CMA-ES spread; omit it to use the runner's automatic rule.",
+    )
     run.add_argument("--full-physics", action="store_true")
     run.add_argument("--label", help="Optional readable output-label prefix.")
     run.add_argument("--out-dir", help="Explicit output directory; overrides automatic naming.")
@@ -170,9 +174,9 @@ def run_campaign(args: argparse.Namespace) -> None:
         str(args.workers),
         "--seed",
         str(args.seed),
-        "--sigma0",
-        str(args.sigma0),
     ]
+    if args.sigma0 is not None:
+        command.extend(("--sigma0", str(args.sigma0)))
     if args.warm_start is not None:
         command.extend(("--warm-start", args.warm_start))
     if args.full_physics:
