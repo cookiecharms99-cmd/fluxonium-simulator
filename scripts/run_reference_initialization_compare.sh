@@ -9,7 +9,7 @@ set -euo pipefail
 
 RUN_LABEL="laptop_reference_init_$(date -u +%Y%m%dT%H%M%SZ)"
 COMMON_ARGS=(
-  --physics-config config/reference_prof.json
+  --physics-config config/device_calibrated.json
   --full-physics
   --duration 150
   --generations 80

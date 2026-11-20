@@ -25,7 +25,11 @@ fi
 JOB_LABEL="${SLURM_JOB_ID:-local_$(date -u +%Y%m%dT%H%M%SZ)}"
 
 uv run python main/run_cmaes.py \
-  --physics-config config/charge_only_good_flux_150ns_cutoff20.json \
+  --physics-config config/device_calibrated.json \
+  --flux-count 0 \
+  --charge-count 20 \
+  --fixed-flux saved_controls \
+  --saved-flux-controls "$PARENT_CONTROLS" \
   --initialization zero \
   --full-physics \
   --duration 150 \

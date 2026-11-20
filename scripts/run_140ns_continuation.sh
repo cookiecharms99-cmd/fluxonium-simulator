@@ -18,7 +18,7 @@ fi
 
 systemd-inhibit --what=sleep --why="Fluxonium 140-ns continuation" \
   uv run python main/run_cmaes.py \
-    --physics-config config/reference_prof.json \
+    --physics-config config/device_calibrated.json \
     --initialization warm_start \
     --warm-start "$PARENT_WEIGHTS" \
     --full-physics \

@@ -24,7 +24,7 @@ ls -ld main/run_cmaes.py
 JOB_LABEL="${SLURM_JOB_ID:-local_$(date -u +%Y%m%dT%H%M%SZ)}"
 
 uv run python main/run_cmaes.py \
-  --physics-config config/reference_prof.json \
+  --physics-config config/device_calibrated.json \
   --initialization piecewise_lstsq \
   --full-physics \
   --duration 150 \

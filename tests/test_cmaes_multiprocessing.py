@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def small_physics_config() -> dict:
     """Use a cheap model because this test checks plumbing, not convergence."""
-    with (PROJECT_ROOT / "config" / "mini_audit.json").open(
+    with (PROJECT_ROOT / "config" / "device_calibrated.json").open(
         "r", encoding="utf-8"
     ) as file:
         config = copy.deepcopy(json.load(file))

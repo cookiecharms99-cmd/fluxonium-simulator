@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from source.run_artifacts import environment_snapshot, utc_timestamp, write_json  # noqa: E402
+from source.optimization.cmaes import run_cmaes  # noqa: E402
 from source.simulator import FluxoniumResetSimulator  # noqa: E402
 
 DEFAULT_RUNS_DIRECTORY = PROJECT_ROOT / "data" / "output" / "cmaes"
@@ -97,11 +98,65 @@ def evaluate_saved_weights(
     return simulator.final_ground_population(weights, times)
 
 
+def campaign_timing(
+    simulator: Any,
+    physics_config: dict,
+    weights: np.ndarray,
+    times: np.ndarray,
+    *,
+    workers: int,
+    population_size: int,
+    generations: int,
+) -> float:
+    """Time real CMA-ES generations without creating a scientific run record."""
+    start = perf_counter()
+    run_cmaes(
+        simulator,
+        physics_config,
+        times,
+        generations=generations,
+        population_size=population_size,
+        sigma0=0.01,
+        seed=1234,
+        workers=workers,
+        initial_weights=weights,
+    )
+    return perf_counter() - start
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", help="Run directory or name under data/output/cmaes/.")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument(
+        "--campaign-generations",
+        type=int,
+        default=0,
+        help=(
+            "Also time this many real CMA-ES generations with no checkpoint "
+            "writes; zero keeps the benchmark solve-only."
+        ),
+    )
+    parser.add_argument(
+        "--campaign-workers",
+        type=int,
+        nargs="+",
+        default=(1, 4),
+        help="Worker counts to compare for the optional mini-campaign.",
+    )
+    parser.add_argument(
+        "--campaign-popsize",
+        type=int,
+        default=16,
+        help="CMA-ES population size for the optional mini-campaign.",
+    )
+    parser.add_argument(
+        "--campaign-repetitions",
+        type=int,
+        default=1,
+        help="Timed repetitions per mini-campaign worker count.",
+    )
     parser.add_argument("--output-dir", default="local_scratch")
     parser.add_argument(
         "--simulator-revision",
@@ -118,6 +173,10 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.repetitions < 1 or args.warmups < 0:
         raise ValueError("--repetitions must be positive and --warmups non-negative.")
+    if args.campaign_generations < 0 or args.campaign_repetitions < 1:
+        raise ValueError("Campaign generation and repetition counts must be non-negative/positive.")
+    if args.campaign_popsize < 1 or any(workers < 1 for workers in args.campaign_workers):
+        raise ValueError("Campaign population size and worker counts must be positive.")
 
     run_directory = resolve_run_directory(args.run)
     with (run_directory / "metadata.json").open(encoding="utf-8") as file:
@@ -144,6 +203,27 @@ def main() -> None:
         return evaluate_saved_weights(simulator, weights, times)
 
     end_to_end = measure(construct_and_solve, args.repetitions, args.warmups)
+    campaigns = {}
+    if args.campaign_generations:
+        for workers in args.campaign_workers:
+            samples = measure(
+                lambda workers=workers: campaign_timing(
+                    simulator_class(physics_config),
+                    physics_config,
+                    weights,
+                    times,
+                    workers=workers,
+                    population_size=args.campaign_popsize,
+                    generations=args.campaign_generations,
+                ),
+                args.campaign_repetitions,
+                warmups=0,
+            )
+            summary = timing_summary(samples)
+            summary["seconds_per_generation"] = (
+                summary["median_seconds"] / args.campaign_generations
+            )
+            campaigns[str(workers)] = summary
     benchmark = {
         "run_directory": str(run_directory),
         "control_configuration": physics_config["model_settings"].get("controls"),
@@ -155,6 +235,11 @@ def main() -> None:
         "construction": timing_summary(construction),
         "solve_on_shared_simulator": timing_summary(solve_only),
         "fresh_simulator_plus_solve": timing_summary(end_to_end),
+        "campaign": {
+            "generations": args.campaign_generations,
+            "population_size": args.campaign_popsize,
+            "samples_by_worker_count": campaigns,
+        },
         "environment": environment_snapshot(PROJECT_ROOT),
     }
 
@@ -172,6 +257,11 @@ def main() -> None:
         "Shared-simulator solve median: "
         f"{benchmark['solve_on_shared_simulator']['median_seconds']:.3f} s"
     )
+    for workers, summary in campaigns.items():
+        print(
+            f"Mini-campaign ({workers} worker(s)) median: "
+            f"{summary['seconds_per_generation']:.3f} s/generation"
+        )
     print(
         "Fresh simulator + solve median: "
         f"{benchmark['fresh_simulator_plus_solve']['median_seconds']:.3f} s"

@@ -10,7 +10,7 @@ from source.simulator import FluxoniumResetSimulator
 duration = 20.0
 
 project_root = Path(__file__).resolve().parents[1]
-params_path = project_root / "config" / "reference_prof.json"
+params_path = project_root / "config" / "device_calibrated.json"
 
 with open(params_path, "r") as file:
     params = json.load(file)

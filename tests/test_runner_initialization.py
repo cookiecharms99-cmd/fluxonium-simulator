@@ -7,8 +7,12 @@ import pytest
 
 from main.run_cmaes import (
     DEFAULT_DURATION,
+    apply_control_overrides,
+    build_parser,
     evaluate_protocol_center,
     fill_initial_weights,
+    load_parent_final_sigma,
+    select_sigma0,
 )
 from source.simulator import sine_basis
 
@@ -97,6 +101,123 @@ def test_runner_evaluates_the_configured_center() -> None:
     times = np.linspace(0.0, DEFAULT_DURATION, 11)
 
     assert evaluate_protocol_center(simulator, weights, times) == 0.11
+
+
+def test_runner_control_flags_create_a_saved_flux_charge_experiment() -> None:
+    """Scenario choices belong to the recorded effective config, not new JSON files."""
+    physics_config = {
+        "model_settings": {
+            "controls": {
+                "flux": {"coefficient_count": 40, "fixed_default": "idle"},
+                "charge": {
+                    "coefficient_count": 0,
+                    "mode": "calibrated_plus_fourier_correction",
+                },
+            }
+        }
+    }
+    args = build_parser().parse_args(
+        [
+            "--flux-count",
+            "0",
+            "--charge-count",
+            "20",
+            "--fixed-flux",
+            "saved_controls",
+            "--saved-flux-controls",
+            "parent/controls.npz",
+        ]
+    )
+
+    apply_control_overrides(physics_config, args)
+
+    assert physics_config["model_settings"]["controls"] == {
+        "flux": {
+            "coefficient_count": 0,
+            "fixed_default": "saved_controls",
+            "saved_controls_path": "parent/controls.npz",
+        },
+        "charge": {
+            "coefficient_count": 20,
+            "mode": "calibrated_plus_fourier_correction",
+        },
+    }
+
+
+def test_runner_rejects_incomplete_fixed_random_flux_flags() -> None:
+    physics_config = {
+        "model_settings": {
+            "controls": {
+                "flux": {"coefficient_count": 0, "fixed_default": "idle"},
+                "charge": {
+                    "coefficient_count": 0,
+                    "mode": "calibrated_plus_fourier_correction",
+                },
+            }
+        }
+    }
+    args = build_parser().parse_args(
+        ["--fixed-flux", "random_sine", "--fixed-flux-seed", "7"]
+    )
+
+    with pytest.raises(ValueError, match="needs --fixed-flux-harmonic-count"):
+        apply_control_overrides(physics_config, args)
+
+
+def test_parent_final_sigma_prefers_recorded_metadata(tmp_path) -> None:
+    warm_start_path = tmp_path / "best_weights.npy"
+    np.save(warm_start_path, np.zeros(4))
+    (tmp_path / "metadata.json").write_text('{"final_sigma": 0.0125}')
+
+    sigma0, source = load_parent_final_sigma(warm_start_path)
+
+    assert sigma0 == 0.0125
+    assert source.name == "metadata.json"
+
+
+def test_parent_final_sigma_falls_back_to_old_history(tmp_path) -> None:
+    warm_start_path = tmp_path / "best_weights.npy"
+    np.save(warm_start_path, np.zeros(4))
+    (tmp_path / "history.csv").write_text(
+        "generation,sigma\n1,0.1\n2,0.003\n", encoding="utf-8"
+    )
+
+    sigma0, source = load_parent_final_sigma(warm_start_path)
+
+    assert sigma0 == 0.003
+    assert source.name == "history.csv"
+
+
+def test_sigma0_modes_are_explicit_and_recordable(tmp_path) -> None:
+    parent_weights = tmp_path / "best_weights.npy"
+    np.save(parent_weights, np.zeros(4))
+    (tmp_path / "summary.json").write_text('{"final_sigma": 0.004}')
+
+    sqrt_sigma, sqrt_source = select_sigma0(
+        "sqrt_loss",
+        initial_fidelity=0.995,
+        fixed_sigma0=None,
+        warm_start_path=None,
+    )
+    fixed_sigma, fixed_source = select_sigma0(
+        "fixed",
+        initial_fidelity=0.995,
+        fixed_sigma0=0.005,
+        warm_start_path=None,
+    )
+    parent_sigma, parent_source = select_sigma0(
+        "parent_final",
+        initial_fidelity=0.995,
+        fixed_sigma0=None,
+        warm_start_path=parent_weights,
+    )
+
+    assert sqrt_sigma == pytest.approx(0.03)
+    assert sqrt_source == "sqrt_loss(initial_center_population)"
+    assert fixed_sigma == 0.005
+    assert fixed_source == "explicit --sigma0"
+    assert parent_sigma == 0.004
+    assert "summary.json" in parent_source
 
 
 def test_runner_warm_start_copies_compatible_weights(tmp_path) -> None:

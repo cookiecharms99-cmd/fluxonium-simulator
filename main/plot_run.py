@@ -16,6 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from source.simulator import FluxoniumResetSimulator, PathwayDiagnostics  # noqa: E402
+from source.analysis.run_analysis import (  # noqa: E402
+    analyze_history,
+    format_convergence_summary,
+)
 
 DEFAULT_RUNS_DIRECTORY = PROJECT_ROOT / "data" / "output" / "cmaes"
 
@@ -63,6 +67,7 @@ def print_run_summary(
     metadata: dict,
     summary: dict,
     population_cutoff: int | None,
+    history: dict[str, np.ndarray] | None = None,
 ) -> None:
     """Print the few fields useful for deciding what to inspect next."""
     parameters = metadata.get("run_parameters", {})
@@ -83,6 +88,12 @@ def print_run_summary(
     print(f"Completed generations: {summary.get('completed_generations', 'unknown')}")
     print(f"Objective evaluations: {summary.get('objective_evaluations', 'unknown')}")
     print(f"Fresh reproduction: {summary.get('fresh_reproduction_population')}")
+
+    if history:
+        conv_summary = analyze_history(history)
+        if conv_summary is not None:
+            print(format_convergence_summary(conv_summary))
+
     if population_cutoff is not None:
         print(f"Reproducing pathway diagnostics at cutoff {population_cutoff}...")
 
@@ -112,7 +123,8 @@ def plot_run(
     """Plot reward history, controls, and optional pathway diagnostics."""
     metadata = load_json(run_directory / "metadata.json")
     summary = load_json(run_directory / "summary.json")
-    print_run_summary(run_directory, metadata, summary, population_cutoff)
+    history = load_history(run_directory / "history.csv")
+    print_run_summary(run_directory, metadata, summary, population_cutoff, history=history)
 
     controls_path = run_directory / "controls.npz"
     if not controls_path.is_file():

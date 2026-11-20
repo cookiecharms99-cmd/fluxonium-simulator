@@ -1,117 +1,114 @@
-# Project handoff — 2026-11-08
+# Project handoff — 2026-11-20
 
-This is the compact handoff for the next collaboration session. Read
-`README.md`, `AGENTS.md`, and this file before changing the physics or
-optimizer path. The detailed historical audit remains in
-`References/fluxonium-project-handoff.docx`.
+Read `README.md`, `AGENTS.md`, and this file before changing simulator physics
+or the optimization path. `References/fluxonium-project-handoff.docx` remains
+the detailed historical physics audit.
 
-## Where the project is
+## Current checkpoint
 
-The trusted simulator is `source/simulator.py`, using a fixed fluxonium LC
-basis tensor a two-state cavity Fock basis. The reset objective is final
-`P(g,0)` from a 50/50 incoherent idle mixture of `|g,0>` and `|e,0>`.
+`source/simulator.py` is the trusted fluxonium-cavity reference simulator. It
+uses a fixed fluxonium LC basis tensor a two-level cavity Fock basis and solves
+the open-system dynamics with QuTiP. The objective is final `P(g,0)` from the
+50/50 incoherent idle mixture of `|g,0>` and `|e,0>`.
 
-One configuration-driven control-to-evolution path owns every control case.
-Each runnable JSON declares `model_settings.controls.flux` and `.charge`, with
-an explicit `coefficient_count` for each. A zero-sized flux block selects a
-declared fixed waveform; a zero-sized charge block retains the calibrated
-charge tone. The professor-comparable flux-only case, charge-only ablations,
-and exploratory joint control therefore differ by configuration rather than by
-simulator APIs or CLI protocol labels.
+`config/device_calibrated.json` is the one active device/numerics baseline.
+CLI flags declare an experiment's active or fixed flux/charge controls, and
+the runner saves the resulting effective JSON inside the run directory. This
+keeps scenario-specific configs out of version control while preserving exact
+reproducibility. Do not reintroduce a duplicate reference simulator.
 
-The joint protocol's charge envelope is now a full Fourier basis: constant,
-then sine/cosine pairs. It still multiplies the exploratory `sin(omega_ef*t)`
-carrier. This intentionally replaces the prior sine-only charge basis, so old
-joint artifacts cannot be regenerated from their coefficient vectors without a
-separate projection or compatibility mode. The fixed-charge reference protocol
-is unchanged; a one-time independent waveform-and-evolution check verified it
-exactly after removal of the duplicate reference methods.
+The repository interface is now the `Justfile`: run `just manual` for the
+short manual. `main/flux.py` was intentionally removed. The latest verified
+suite result is **37 passed, 1 skipped**.
 
-The runner has explicit initialization choices: `zero`, seeded `random`,
-`piecewise_lstsq`, and `warm_start`. Its artifacts record the effective
-configuration, initial-weight hash, per-generation sigma, and final sigma.
+## Physics conventions that must not drift
 
-The last verified suite result was **24 passed, 1 skipped**. A two-generation,
-cutoff-8 fixed-charge smoke run completed with a 40-element coefficient vector,
-matching fresh reproduction, and recorded final sigma. This establishes
-execution plumbing only; it is not a scientific performance result.
+- External phase is `2*pi*external_flux_quanta`; half flux is idle phase
+  `pi`, and the final measurement is at idle.
+- `0.25 Phi_0` is the experimentally calibrated interaction neighborhood.
+  The model-derived bare resonance near `0.253980967 Phi_0` is a separate
+  diagnostic and must not silently replace it.
+- The intended pathway is
+  `|e,0> --charge--> |f,0> <--> |g,1> --cavity decay--> |g,0>`.
+- The experimental target is `P(g,0) >= 0.999`.
+- `kappa = 2*pi/40` is experimentally derived. The cycles/ns versus
+  radians/ns convention still needs explicit documentation.
+- A cutoff of 13 is acceptable for cheap qualitative screening near 0.99; it
+  is not validation for 0.999 claims. Use cutoff 20 for the normal serious
+  baseline and audit notable results at higher cutoff.
 
-## Physics guardrails
+## Evidence established so far
 
-- External flux fraction and phase differ: `phase = 2*pi*flux_quanta`.
-- Idle is `0.5 Phi_0` / phase `pi`; preparation and final `|g,0>` measurement
-  belong there.
-- `0.25 Phi_0` is the experimental interaction neighborhood. The model-derived
-  bare resonance near `0.253980967 Phi_0` is a separate diagnostic result and
-  must not silently replace the experimental value.
-- `config/reference_prof.json` stores the experimental interaction value
-  `0.25 Phi_0`. The model-derived bare resonance near `0.253980967 Phi_0`
-  remains a separate diagnostic value. The legacy intuitive pulse targets
-  phase `pi/2`, i.e. `0.25 Phi_0`.
-- `kappa = 2*pi/40` is experimentally derived; its detailed unit convention
-  (including cycles/ns versus radians/ns) still needs explicit documentation.
+### Fixed-charge flux baseline
 
-## Current next task: intuitive initialization
+The 150-ns professor-style fixed-charge, flux-only pulse
+`reference_6h_legacy_4776599` reproduced around **0.995657** at cutoff 20.
+This is the current useful reference point, but it is still below the 0.999
+target. Duration-continuation experiments reached roughly 0.99+ at shorter
+durations, including an approximately 0.996 result at 110 ns, but need careful
+initialization/projection before comparative claims.
 
-`source/control_initialization.py` was started for pulse-construction ideas.
-It currently implements the professor-inspired piecewise phase pulse: ramp
-from `pi` to `pi/2`, hold, then return to `pi`. At 150 ns its timing fractions
-correspond to the legacy 10 ns / 110 ns / 150 ns schedule. Focused tests now
-cover that schedule and exact least-squares recovery for a waveform already in
-the sine basis. It still needs polish and one project-specific diagnostic:
+### Charge ablations
 
-1. use phase-based names and clean fraction validation;
-2. plot and record the approximation error when the 40-sine basis reconstructs
-   the sharp-cornered legacy waveform;
-3. keep projection in `control_initialization.py`, returning a new weight
-   vector. Do not make the simulator own or mutate CMA-ES candidate weights.
+Charge corrections have genuine but limited demonstrated leverage:
 
-The first fair cutoff-20 reference evaluations should be:
+- holding the good saved 150-ns flux waveform fixed and optimizing 20
+  charge-correction coefficients raised the saved best from
+  **0.9956569513** to **0.9959302193** at cutoff 20;
+- the charge-only and random-flux ablations did substantially worse;
+- naive joint flux-plus-charge CMA-ES gets lost in the larger search space.
 
-1. zero flux coefficients;
-2. direct 150-ns intuitive waveform;
-3. its 40-sine least-squares reconstruction.
+Therefore: the flux waveform is the dominant ingredient. Do not yet claim
+that charge control solves the reset problem or that an exploratory amplitude
+is hardware-realistic without calibration constraints.
 
-Only then run several equal-budget CMA-ES seeds from declared centers. Record
-the initialization scheme and coefficient hash in metadata.
+### Dimensions and performance
 
-## Architecture decisions worth preserving
+An exploratory 150-ns flux-only cutoff-15 sweep, 250 generations / 4000
+evaluations each, produced 20D **0.9896**, 40D **0.7809**, 60D **0.4307**, and
+80D **0.2623**. This suggests higher dimension can make CMA-ES much harder,
+but different seeds confound a dimension-only conclusion. A 60D saved result
+changed only from 0.4307 at cutoff 15 to about 0.4447 at cutoff 20, so
+truncation alone does not explain that failure. Finish cutoff checks and run a
+controlled same-seed cutoff-20 comparison.
 
-- Do not copy a second reference simulator. Configured active and fixed control
-  blocks share the same simulator, solver, and measurement path.
-- Flux and charge sine bases are independent and start at `k=1`.
-- The simulator's temporary scqubits object used for fixed-LC-basis operators
-  is not a flux-centered accuracy trick. A later small cleanup can cache one
-  idle-flux scqubits object/eigensystem for startup efficiency; cutoff
-  convergence, not helper-object flux, controls truncation confidence.
-- Treat the earlier 60-parameter joint-control cutoff-20 overnight run as a
-  checkpointing/exploration artifact only, not a professor-comparable result.
-  Its best `P(g,0)` was about 0.547857 early in the run.
-- Do not add CMA-ES restart heuristics until the flux-only reference and
-  initial-center comparison exist. Then compare restart rules under equal
-  total evaluation budgets.
+The Athene jobs were slower per generation than anticipated from laptop
+timings. The next comparison must benchmark an allocated compute node and the
+laptop under matching numerical settings; do not infer speed from nominal CPU
+clock rate alone.
 
-## Useful commands
+## Important known issues / active development
 
-```bash
-uv run pytest
+1. **Warm-start incumbent repair:** the runner now persists and seeds the
+   evaluated center as the best-so-far candidate before generation 1. Its
+   evaluation is included in the recorded evaluation count, but it is not fed
+   into CMA-ES's population update. The next question is scientific: compare
+   sensible warm-start sigma choices under equal budgets. The prepared Slurm
+   array `jobs_to_send/warm_start_sigma_compare.slurm` holds every other
+   setting fixed and compares parent-final sigma, square-root-loss sigma, and
+   fixed 0.005.
+2. **Cluster finalization:** two six-hour jobs checkpointed cleanly but their
+   summaries remained `status: running` and did not write a final fresh
+   reproduction after the scheduler deadline. Treat checkpoint artifacts as
+   usable but fix/report this termination path before relying on the summary
+   status.
+3. **New charge modes:** `free_fourier`, additive calibrated correction, and
+   `calibrated_times_one_plus_fourier_correction` now have waveform-level
+   tests. The last mode is explicitly a *dimensionless modulation*, so zero
+   coefficients reproduce the calibrated tone. They still need declared
+   experimental configs and a physical amplitude decision before launch.
+4. **Cross-duration transfer:** weights are basis/duration-specific. Preserve
+   a physical waveform with explicit resampling/projection rather than copying
+   coefficient vectors across durations.
 
-uv run main/run_cmaes.py \
-  --physics-config config/reference_prof.json \
-  --initialization piecewise_lstsq \
-  --generations 5 --popsize 4 --workers 2
-```
+## Immediate next task
 
-Use `--full-physics` for cutoff-20 reference work; without it the runner uses
-the cheap cutoff-8 smoke settings. See `TODO_TODAY.md` for the active checklist
-and `ROADMAP.md` for the ordered research plan.
+Make the new charge modes testable and scientifically comparable first:
 
-Prepared launchers:
+1. clean the carrier/envelope implementation and add waveform-level tests;
+2. define configs and an experimental hypothesis for free versus additive and
+   multiplicative charge control;
+3. only then submit an equal-budget cutoff-20 charge-mode comparison.
 
-- `scripts/run_reference_initialization_compare.sh`: laptop, three equal-budget
-  cutoff-20 runs for `zero`, `random`, and `piecewise_lstsq` centers;
-- `jobs_to_send/reference_smoke_10min.slurm`: cluster environment/reference
-  smoke check;
-- `jobs_to_send/reference_6h_legacy.slurm`: six-hour, full-physics,
-  legacy-initialized single-seed reference campaign. Submit this only after the
-  smoke job succeeds.
+In parallel, review and submit the equal-budget warm-start sigma comparison.
+See `TODO_TODAY.md` for the ordered tasks, commands, and ownership.

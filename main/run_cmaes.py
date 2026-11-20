@@ -14,6 +14,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 # Import stuff! -------------
 import argparse
 import copy
+import csv
 import json
 import signal
 import sys
@@ -76,17 +77,129 @@ def evaluate_protocol_center(
     return simulator.final_ground_population(weights, times)
 
 
-def initial_sigma0(
-    initial_fidelity: float | None = None, default_sigma0=0.3, min_sigma0=0.015
+def sqrt_loss_sigma0(
+    initial_fidelity: float | None = None, default_sigma0: float = 0.3, min_sigma0: float = 0.015
 ) -> float:
-    """
-    figures out what the initial sigma going into CMAES should be :)
-    """
+    """Scale sigma0 as sqrt(initial infidelity), with conservative limits."""
     if initial_fidelity is not None and initial_fidelity > 0.50:
         loss = max(1 - initial_fidelity, 1e-6)
         scaled_sigma0 = default_sigma0 * np.sqrt(loss / 0.50)
         return float(np.clip(scaled_sigma0, a_min=min_sigma0, a_max=default_sigma0))
     return default_sigma0
+
+
+def load_parent_final_sigma(warm_start_path: str | Path) -> tuple[float, Path]:
+    """Load a parent run's final sigma, including pre-final-sigma artifacts.
+
+    New runs record ``final_sigma`` directly. Older completed/checkpointed
+    artifacts may only have the last ``sigma`` in ``history.csv``; that is the
+    closest faithful record of the parent distribution's final spread.
+    """
+    parent_directory = Path(warm_start_path).resolve().parent
+    for artifact_name in ("metadata.json", "summary.json"):
+        artifact_path = parent_directory / artifact_name
+        if not artifact_path.is_file():
+            continue
+        with artifact_path.open(encoding="utf-8") as file:
+            payload = json.load(file)
+        for field in ("final_sigma", "latest_sigma"):
+            value = payload.get(field)
+            if value is not None and np.isfinite(value) and value > 0.0:
+                return float(value), artifact_path
+
+    history_path = parent_directory / "history.csv"
+    if history_path.is_file():
+        with history_path.open(newline="", encoding="utf-8") as file:
+            rows = list(csv.DictReader(file))
+        if rows:
+            value = float(rows[-1]["sigma"])
+            if np.isfinite(value) and value > 0.0:
+                return value, history_path
+
+    raise ValueError(
+        "Could not find a positive final sigma in the warm-start parent run. "
+        "Expected final_sigma/latest_sigma in metadata.json or summary.json, "
+        "or a final sigma column in history.csv."
+    )
+
+
+def select_sigma0(
+    mode: str,
+    *,
+    initial_fidelity: float,
+    fixed_sigma0: float | None,
+    warm_start_path: str | Path | None,
+) -> tuple[float, str]:
+    """Choose a declared initial CMA-ES spread and describe its source."""
+    if mode == "sqrt_loss":
+        if fixed_sigma0 is not None:
+            raise ValueError("--sigma0 is only valid with --sigma0-mode fixed.")
+        return sqrt_loss_sigma0(initial_fidelity), "sqrt_loss(initial_center_population)"
+
+    if mode == "fixed":
+        if fixed_sigma0 is None:
+            raise ValueError("--sigma0-mode fixed requires a positive --sigma0.")
+        if not np.isfinite(fixed_sigma0) or fixed_sigma0 <= 0.0:
+            raise ValueError("--sigma0 must be a finite positive number.")
+        return float(fixed_sigma0), "explicit --sigma0"
+
+    if mode == "parent_final":
+        if fixed_sigma0 is not None:
+            raise ValueError("--sigma0 is only valid with --sigma0-mode fixed.")
+        if warm_start_path is None:
+            raise ValueError("--sigma0-mode parent_final requires --warm-start.")
+        sigma0, source_path = load_parent_final_sigma(warm_start_path)
+        return sigma0, f"parent final sigma from {source_path}"
+
+    raise ValueError(f"Unknown sigma0 mode: {mode!r}.")
+
+
+def apply_control_overrides(physics_config: dict, args: argparse.Namespace) -> None:
+    """Apply declared experiment choices to the copied device configuration.
+
+    The JSON file identifies the calibrated device and numerical defaults. CLI
+    flags identify one experiment's active/fixed controls; the resulting full
+    configuration is written into that run's artifact directory.
+    """
+    controls = physics_config["model_settings"]["controls"]
+    flux = controls["flux"]
+    charge = controls["charge"]
+
+    if args.flux_count is not None:
+        flux["coefficient_count"] = args.flux_count
+    if args.charge_count is not None:
+        charge["coefficient_count"] = args.charge_count
+    if args.charge_mode is not None:
+        charge["mode"] = args.charge_mode
+    if args.fixed_flux is not None:
+        flux["fixed_default"] = args.fixed_flux
+    if args.saved_flux_controls is not None:
+        if args.fixed_flux not in (None, "saved_controls"):
+            raise ValueError("--saved-flux-controls requires --fixed-flux saved_controls.")
+        flux["fixed_default"] = "saved_controls"
+        flux["saved_controls_path"] = args.saved_flux_controls
+    if args.fixed_flux_harmonic_count is not None:
+        flux["fixed_harmonic_count"] = args.fixed_flux_harmonic_count
+    if args.fixed_flux_seed is not None:
+        flux["random_seed"] = args.fixed_flux_seed
+    if args.fixed_flux_scale is not None:
+        flux["random_scale"] = args.fixed_flux_scale
+
+    random_flux_arguments = (
+        args.fixed_flux_harmonic_count,
+        args.fixed_flux_seed,
+        args.fixed_flux_scale,
+    )
+    if any(value is not None for value in random_flux_arguments):
+        if flux["fixed_default"] != "random_sine":
+            raise ValueError(
+                "Fixed random-flux parameters require --fixed-flux random_sine."
+            )
+        if any(value is None for value in random_flux_arguments):
+            raise ValueError(
+                "--fixed-flux random_sine needs --fixed-flux-harmonic-count, "
+                "--fixed-flux-seed, and --fixed-flux-scale."
+            )
 
 
 def fill_initial_weights(
@@ -168,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
     parser.add_argument(
         "--physics-config",
-        default="config/mini_audit.json",
+        default="config/device_calibrated.json",
         help="Physics/model JSON path, relative to the project root by default.",
     )
     parser.add_argument(
@@ -211,7 +324,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sigma0",
         type=float,
-        help=("Provide the initial default std dev of the dist for cmaes :3"),
+        help="Explicit initial CMA-ES standard deviation; requires --sigma0-mode fixed.",
+    )
+    parser.add_argument(
+        "--sigma0-mode",
+        choices=("sqrt_loss", "parent_final", "fixed"),
+        default="sqrt_loss",
+        help=(
+            "Choose sigma0 from initial infidelity, copy the warm-start parent's "
+            "final sigma, or use explicit --sigma0."
+        ),
     )
     parser.add_argument(
         "--warm-start",
@@ -231,6 +353,44 @@ def build_parser() -> argparse.ArgumentParser:
             "Use 0 to hold the configured fixed flux waveform."
         ),
     )
+    parser.add_argument(
+        "--charge-count",
+        type=int,
+        help="Override the configuration's active charge-coefficient count for this run.",
+    )
+    parser.add_argument(
+        "--charge-mode",
+        choices=(
+            "free_fourier",
+            "calibrated_plus_fourier_correction",
+            "calibrated_times_one_plus_fourier_correction",
+        ),
+        help="Charge-control meaning for an active charge block.",
+    )
+    parser.add_argument(
+        "--fixed-flux",
+        choices=("idle", "piecewise", "random_sine", "saved_controls"),
+        help="Waveform used when --flux-count 0 holds flux fixed.",
+    )
+    parser.add_argument(
+        "--saved-flux-controls",
+        help="controls.npz to use with --fixed-flux saved_controls.",
+    )
+    parser.add_argument(
+        "--fixed-flux-harmonic-count",
+        type=int,
+        help="Harmonic count for --fixed-flux random_sine.",
+    )
+    parser.add_argument(
+        "--fixed-flux-seed",
+        type=int,
+        help="Random seed for --fixed-flux random_sine.",
+    )
+    parser.add_argument(
+        "--fixed-flux-scale",
+        type=float,
+        help="Coefficient standard deviation for --fixed-flux random_sine.",
+    )
     return parser
 
 
@@ -246,12 +406,11 @@ def main() -> None:
 
     physics_config = load_json(physics_path)
 
-    if args.flux_count is not None:
-        if args.flux_count < 0:
-            raise ValueError("--flux-count must be non-negative.")
-        physics_config["model_settings"]["controls"]["flux"]["coefficient_count"] = (
-            args.flux_count
-        )
+    if args.flux_count is not None and args.flux_count < 0:
+        raise ValueError("--flux-count must be non-negative.")
+    if args.charge_count is not None and args.charge_count < 0:
+        raise ValueError("--charge-count must be non-negative.")
+    apply_control_overrides(physics_config, args)
     # optimizer_config = load_json(optimizer_path)
     if not args.full_physics:
         physics_config = make_smoke_config(physics_config)
@@ -307,6 +466,10 @@ def main() -> None:
             "duration_ns": args.duration,
             "time_steps": num_steps,
             "flux_count_override": args.flux_count,
+            "charge_count_override": args.charge_count,
+            "charge_mode_override": args.charge_mode,
+            "fixed_flux_override": args.fixed_flux,
+            "sigma0_mode": args.sigma0_mode,
             "initialization_scheme": args.initialization,
             "warm_start_weights_path": (
                 args.warm_start if args.initialization == "warm_start" else None
@@ -335,15 +498,14 @@ def main() -> None:
         simulator, initial_weights, times
     )
     metadata["initial_center_population"] = initial_center_population
-    if args.sigma0 is not None:
-        sigma0 = args.sigma0
-    else:
-        sigma0 = initial_sigma0(
-            initial_fidelity=initial_center_population,
-            default_sigma0=0.3,
-            min_sigma0=0.015,
-        )
+    sigma0, sigma0_source = select_sigma0(
+        args.sigma0_mode,
+        initial_fidelity=initial_center_population,
+        fixed_sigma0=args.sigma0,
+        warm_start_path=args.warm_start,
+    )
     metadata["run_parameters"]["sigma0"] = sigma0
+    metadata["run_parameters"]["sigma0_source"] = sigma0_source
     write_json(output_path / "metadata.json", metadata)
     print(f"Initial center P(g, 0): {initial_center_population:.6f}")
 
@@ -368,15 +530,15 @@ def main() -> None:
             "status": "running",
             "stop_reason": None,
             "best_final_ground_population": (
-                None if progress is None else progress.best_reward
+                initial_center_population if progress is None else progress.best_reward
             ),
-            "final_sigma": None if progress is None else progress.sigma,
+            "final_sigma": sigma0 if progress is None else progress.sigma,
             "initial_center_population": initial_center_population,
             "elapsed_seconds": perf_counter() - start,
             "completed_generations": completed_generations,
             "requested_generations": args.generations,
             "objective_evaluations": (
-                0 if progress is None else progress.evaluation_count
+                1 if progress is None else progress.evaluation_count
             ),
             "duration_ns": args.duration,
             "fresh_reproduction_population": None,
@@ -385,8 +547,17 @@ def main() -> None:
         }
         write_json(output_path / "summary.json", summary)
 
-    # If a job ends before its first complete generation, this still explains
-    # the run directory rather than leaving it without a summary at all.
+    # The evaluated center is a real incumbent before generation 1. Persist it
+    # now, so a timeout during the first population cannot erase it.
+    np.save(output_path / "best_weights.npy", initial_weights)
+    save_controls(
+        output_path / "controls.npz",
+        times,
+        simulator.controls(initial_weights, times),
+    )
+
+    # If a job ends before its first complete generation, this records the
+    # evaluated center rather than leaving the run without a useful summary.
     write_provisional_summary(None)
 
     def request_termination(_signal_number, _frame) -> None:
@@ -428,6 +599,7 @@ def main() -> None:
             seed=args.seed,
             workers=args.workers,
             initial_weights=initial_weights,
+            initial_reward=initial_center_population,
             on_generation=save_checkpoint,
             should_stop=lambda: termination_requested,
         )
@@ -498,7 +670,9 @@ def main() -> None:
                 "status": "failed",
                 "stop_reason": f"{type(error).__name__}: {error}",
                 "best_final_ground_population": (
-                    None if latest_progress is None else latest_progress.best_reward
+                    initial_center_population
+                    if latest_progress is None
+                    else latest_progress.best_reward
                 ),
                 "initial_center_population": initial_center_population,
                 "elapsed_seconds": perf_counter() - start,
@@ -507,10 +681,10 @@ def main() -> None:
                 ),
                 "requested_generations": args.generations,
                 "objective_evaluations": (
-                    0 if latest_progress is None else latest_progress.evaluation_count
+                    1 if latest_progress is None else latest_progress.evaluation_count
                 ),
                 "final_sigma": (
-                    None if latest_progress is None else latest_progress.sigma
+                    sigma0 if latest_progress is None else latest_progress.sigma
                 ),
                 "duration_ns": args.duration,
                 "fresh_reproduction_population": None,

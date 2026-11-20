@@ -114,7 +114,8 @@ class FluxoniumResetSimulator:
     Candidate ``weights`` have the layout ``[flux weights, charge weights]``.
     The effective configuration declares the number of active coefficients in
     each block. A missing flux block uses its declared fixed waveform; a
-    missing charge block leaves the calibrated charge tone unchanged.
+    missing charge block leaves the calibrated charge tone unchanged, regardless
+    of the configured charge mode.
 
     The model uses a fixed LC basis for fluxonium and a two-state cavity Fock
     basis. All frequency-like parameters and times must use one consistent
@@ -181,6 +182,19 @@ class FluxoniumResetSimulator:
             count = int(section["coefficient_count"])
             if count < 0:
                 raise ValueError(f"{name} coefficient_count cannot be negative.")
+            mode = section.get("mode", "calibrated_plus_fourier_correction")
+            if name == "charge" and mode not in {
+                "free_fourier",
+                "calibrated_plus_fourier_correction",
+                "calibrated_times_one_plus_fourier_correction",
+            }:
+                choices = (
+                    "free_fourier, calibrated_plus_fourier_correction, "
+                    "calibrated_times_one_plus_fourier_correction"
+                )
+                raise ValueError(
+                    f"Unsupported charge-control mode {mode!r}; choose one of {choices}."
+                )
             normalized[name] = {
                 "coefficient_count": count,
                 "fixed_default": section.get("fixed_default", "idle"),
@@ -188,7 +202,7 @@ class FluxoniumResetSimulator:
                 "fixed_harmonic_count": section.get("fixed_harmonic_count"),
                 "random_seed": section.get("random_seed"),
                 "random_scale": section.get("random_scale"),
-                "mode": section.get("mode", "calibrated_plus_fourier_correction"),
+                "mode": mode,
             }
         return normalized
 
@@ -331,6 +345,44 @@ class FluxoniumResetSimulator:
             return control_init.load_saved_flux_waveform(saved_path, times)
         raise ValueError(f"Unknown fixed flux default: {default!r}.")
 
+    def build_charge_drive(
+        self, charge_weights: np.ndarray, times: np.ndarray
+    ) -> np.ndarray:
+        """Return the declared charge-control waveform.
+
+        The calibrated reference drive is ``A0 * sin(omega_ef * t)``, with
+        ``A0 = Omega / n_ef``. When no charge coefficients are active, every
+        mode deliberately reduces to that reference drive.
+
+        Active modes mean:
+
+        - ``free_fourier``: coefficients directly form the physical drive
+          ``A(t)``. It has the drive's physical units and no imposed carrier.
+        - ``calibrated_plus_fourier_correction``: coefficients form an
+          additive envelope correction, giving ``[A0 + delta_A(t)] carrier``.
+        - ``calibrated_times_one_plus_fourier_correction``: coefficients form
+          a dimensionless modulation, giving ``A0 [1 + m(t)] carrier``.
+        """
+        carrier = np.sin(float(self.physics["omega_ef"]) * times)
+        calibrated_amplitude = float(self.physics["Omega"]) / float(
+            self.physics["n_ef"]
+        )
+
+        if self.n_charge_controls == 0:
+            return calibrated_amplitude * carrier
+
+        fourier_signal = charge_weights @ self._charge_basis
+        charge_mode = self.control_settings["charge"]["mode"]
+        if charge_mode == "free_fourier":
+            return fourier_signal
+        if charge_mode == "calibrated_plus_fourier_correction":
+            return (calibrated_amplitude + fourier_signal) * carrier
+        if charge_mode == "calibrated_times_one_plus_fourier_correction":
+            return calibrated_amplitude * (1.0 + fourier_signal) * carrier
+
+        # _read_control_settings rejects this before the simulator is built.
+        raise RuntimeError(f"Unexpected validated charge-control mode: {charge_mode!r}")
+
     def controls(
         self,
         weights: Sequence[float],
@@ -358,20 +410,8 @@ class FluxoniumResetSimulator:
                 self.idle_phase + weights[: self.n_flux_controls] @ self._flux_basis
             )
 
-        carrier = np.sin(float(self.physics["omega_ef"]) * times)
-        envelope_default = float(self.physics["Omega"]) / float(self.physics["n_ef"])
-        charge_mode = self.control_settings["charge"]["mode"]
-
-        if charge_mode != "calibrated_plus_fourier_correction":
-            raise ValueError(f"Unsupported charge-control mode: {charge_mode!r}.")
-
-        if self.n_charge_controls == 0:
-            envelope = envelope_default
-        else:
-            delta_envelope = weights[self.n_flux_controls :] @ self._charge_basis
-            envelope = envelope_default + delta_envelope
-
-        charge_control = envelope * carrier
+        charge_weights = weights[self.n_flux_controls :]
+        charge_control = self.build_charge_drive(charge_weights, times)
 
         return ControlWaveforms(
             external_phase=flux_control, charge_drive=charge_control

@@ -12,25 +12,21 @@ from source.simulator import FluxoniumResetSimulator, charge_fourier_basis
 duration = 20.0
 
 project_root = Path(__file__).resolve().parents[1]
-params_path = project_root / "config" / "mini_audit.json"
+params_path = project_root / "config" / "device_calibrated.json"
 
 with open(params_path, "r") as file:
     params = json.load(file)
+# The active JSON is the fixed-charge reference. These waveform tests need a
+# small joint-control fixture, derived in memory so it is not another config.
+params["model_settings"]["controls"]["flux"]["coefficient_count"] = 20
+params["model_settings"]["controls"]["charge"]["coefficient_count"] = 20
 simulator = FluxoniumResetSimulator(params)
 
 
 def test_runnable_configs_use_explicit_control_blocks() -> None:
     """A new input may not silently fall back to the retired flat schema."""
     for name in (
-        "mini_audit.json",
-        "reference_prof.json",
-        "joint_exploratory.json",
-        "joint_run.json",
-        "charge_only_test.json",
-        "charge_only_idle_150ns.json",
-        "charge_only_random_flux_150ns.json",
-        "charge_only_good_flux_150ns.json",
-        "charge_only_good_flux_150ns_cutoff20.json",
+        "device_calibrated.json",
     ):
         with (project_root / "config" / name).open(encoding="utf-8") as file:
             settings = json.load(file)["model_settings"]
@@ -123,6 +119,78 @@ def test_config_can_select_charge_only_controls_with_idle_flux() -> None:
         controls.charge_drive,
         expected_envelope * np.sin(params["physics"]["omega_ef"] * times),
     )
+
+
+@pytest.mark.parametrize(
+    "charge_mode",
+    (
+        "free_fourier",
+        "calibrated_plus_fourier_correction",
+        "calibrated_times_one_plus_fourier_correction",
+    ),
+)
+def test_zero_size_charge_block_keeps_the_calibrated_reference_drive(
+    charge_mode: str,
+) -> None:
+    """Fixed-charge runs retain the professor's calibrated carrier in every mode."""
+    fixed_charge_params = copy.deepcopy(params)
+    fixed_charge_params["model_settings"]["controls"]["flux"]["coefficient_count"] = 0
+    fixed_charge_params["model_settings"]["controls"]["charge"] = {
+        "coefficient_count": 0,
+        "mode": charge_mode,
+    }
+    fixed_charge_simulator = FluxoniumResetSimulator(fixed_charge_params)
+    times = np.linspace(0.0, duration, 101)
+
+    controls = fixed_charge_simulator.controls(np.empty(0), times)
+    calibrated_drive = (
+        params["physics"]["Omega"] / params["physics"]["n_ef"]
+    ) * np.sin(params["physics"]["omega_ef"] * times)
+    np.testing.assert_allclose(controls.charge_drive, calibrated_drive)
+
+
+def test_free_fourier_charge_mode_directly_represents_the_physical_drive() -> None:
+    free_params = copy.deepcopy(params)
+    free_params["model_settings"]["controls"]["flux"]["coefficient_count"] = 0
+    free_params["model_settings"]["controls"]["charge"] = {
+        "coefficient_count": 2,
+        "mode": "free_fourier",
+    }
+    free_simulator = FluxoniumResetSimulator(free_params)
+    times = np.linspace(0.0, duration, 101)
+
+    controls = free_simulator.controls(np.array([0.3, -0.1]), times)
+    expected_drive = 0.3 - 0.1 * np.sin(2.0 * np.pi * times / duration)
+    np.testing.assert_allclose(controls.charge_drive, expected_drive)
+
+
+def test_multiplicative_charge_mode_modulates_the_calibrated_envelope() -> None:
+    multiplicative_params = copy.deepcopy(params)
+    multiplicative_params["model_settings"]["controls"]["flux"]["coefficient_count"] = 0
+    multiplicative_params["model_settings"]["controls"]["charge"] = {
+        "coefficient_count": 2,
+        "mode": "calibrated_times_one_plus_fourier_correction",
+    }
+    multiplicative_simulator = FluxoniumResetSimulator(multiplicative_params)
+    times = np.linspace(0.0, duration, 101)
+
+    controls = multiplicative_simulator.controls(np.array([0.3, -0.1]), times)
+    modulation = 0.3 - 0.1 * np.sin(2.0 * np.pi * times / duration)
+    expected_drive = (
+        params["physics"]["Omega"]
+        / params["physics"]["n_ef"]
+        * (1.0 + modulation)
+        * np.sin(params["physics"]["omega_ef"] * times)
+    )
+    np.testing.assert_allclose(controls.charge_drive, expected_drive)
+
+
+def test_simulator_rejects_an_unknown_charge_mode() -> None:
+    invalid_params = copy.deepcopy(params)
+    invalid_params["model_settings"]["controls"]["charge"]["mode"] = "mystery"
+
+    with pytest.raises(ValueError, match="Unsupported charge-control mode"):
+        FluxoniumResetSimulator(invalid_params)
 
 
 def test_random_sine_fixed_flux_is_seeded_and_deterministic() -> None:

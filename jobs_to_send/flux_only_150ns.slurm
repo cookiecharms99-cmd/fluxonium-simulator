@@ -33,7 +33,7 @@ for dim in 20 40 60 80; do
 
 
     uv run python main/run_cmaes.py \
-    --physics-config config/flux_only_150ns.json \
+    --physics-config config/device_calibrated.json \
     --full-physics \
     --duration 150 \
     --initialization random \

@@ -8,7 +8,7 @@ This repository belongs to a physics student working with Dr. Fu on fluxonium ac
 - Read `PROJECT_HANDOFF.md` for the current implementation
   checkpoint and immediate next task. Update or replace this handoff when a
   material project milestone is completed.
-- Use `References/fluxonium-project-handoff.docx` for the detailed physics handoff.
+- .
 - Use `References/Code/` to understand the professor's baseline. Do not modify reference code unless explicitly asked; adapt or compare it elsewhere.
 - Treat calibrated experimental values as authoritative when their provenance is known. Use scqubits to construct operators, eigenstates, and model checks, but do not silently replace measured values with simulated values.
 

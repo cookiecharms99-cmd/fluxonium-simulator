@@ -48,7 +48,7 @@ echo "Initialization: $INITIALIZATION"
 echo "Output: data/output/cmaes/$RUN_LABEL"
 
 exec uv run python main/run_cmaes.py \
-  --physics-config config/reference_prof.json \
+  --physics-config config/device_calibrated.json \
   --initialization "$INITIALIZATION" \
   "${EXTRA_ARGS[@]}" \
   --full-physics \

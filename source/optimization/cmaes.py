@@ -114,12 +114,32 @@ def run_generations(
     evaluate,
     *,
     generations: int,
+    initial_best_reward: float | None = None,
+    initial_best_weights: np.ndarray | None = None,
+    initial_evaluation_count: int = 0,
     on_generation: GenerationCallback | None = None,
     should_stop: StopRequested | None = None,
 ) -> tuple[float, np.ndarray, list[dict[str, float | int]], bool]:
-    """Run the shared ask/evaluate/tell loop with a supplied evaluator."""
+    """Run the shared ask/evaluate/tell loop with a supplied evaluator.
+
+    An already-evaluated initial center may seed the best-so-far record. It is
+    deliberately not passed to ``strategy.tell``: CMA-ES adapts from sampled
+    populations, while saved artifacts must never discard a stronger center.
+    """
+    if (initial_best_reward is None) != (initial_best_weights is None):
+        raise ValueError(
+            "initial_best_reward and initial_best_weights must be provided together."
+        )
+    if initial_evaluation_count < 0:
+        raise ValueError("initial_evaluation_count cannot be negative.")
+
     best_reward = -np.inf
     best_weights: np.ndarray | None = None
+    if initial_best_reward is not None:
+        if not np.isfinite(initial_best_reward):
+            raise ValueError("initial_best_reward must be finite.")
+        best_reward = float(initial_best_reward)
+        best_weights = np.asarray(initial_best_weights, dtype=float).copy()
     history: list[dict[str, float | int]] = []
     start = perf_counter()
 
@@ -151,7 +171,8 @@ def run_generations(
                 "std_reward": float(np.std(rewards)),
                 "sigma": float(strategy.sigma),
                 "population_size": len(candidates),
-                "evaluation_count": (generation + 1) * len(candidates),
+                "evaluation_count": initial_evaluation_count
+                + (generation + 1) * len(candidates),
                 "elapsed_seconds": perf_counter() - start,
             }
         )
@@ -162,7 +183,8 @@ def run_generations(
                     best_reward=best_reward,
                     best_weights=best_weights,
                     history=history.copy(),
-                    evaluation_count=(generation + 1) * len(candidates),
+                    evaluation_count=initial_evaluation_count
+                    + (generation + 1) * len(candidates),
                     sigma=float(strategy.sigma),
                 )
             )
@@ -195,13 +217,16 @@ def run_cmaes(
     seed: int,
     workers: int = 1,
     initial_weights: np.ndarray | None = None,
+    initial_reward: float | None = None,
     on_generation: GenerationCallback | None = None,
     should_stop: StopRequested | None = None,
 ) -> CMAESResult:
     """Run a minimal serial or multiprocessing CMA-ES campaign.
 
     Supplying ``initial_weights`` permits fair serial/parallel comparisons.
-    Otherwise the initial center is generated reproducibly from ``seed``.
+    Otherwise the initial center is generated reproducibly from ``seed``. Its
+    evaluated reward seeds the saved best-so-far record, but not CMA-ES's
+    population update.
     """
     if generations <= 0:
         raise ValueError("generations must be positive.")
@@ -221,6 +246,11 @@ def run_cmaes(
             f"{initial_weights.shape}."
         )
 
+    if initial_reward is None:
+        initial_reward = evaluate_candidate(simulator, initial_weights, times)
+    if not np.isfinite(initial_reward):
+        raise ValueError("initial_reward must be finite.")
+
     strategy = cma.CMAEvolutionStrategy(
         initial_weights,
         sigma0,
@@ -236,6 +266,9 @@ def run_cmaes(
             strategy,
             lambda candidates: evaluate_serial(simulator, candidates, times),
             generations=generations,
+            initial_best_reward=initial_reward,
+            initial_best_weights=initial_weights,
+            initial_evaluation_count=1,
             on_generation=on_generation,
             should_stop=should_stop,
         )
@@ -252,6 +285,9 @@ def run_cmaes(
                 strategy,
                 lambda candidates: pool.map(evaluate_worker, candidates),
                 generations=generations,
+                initial_best_reward=initial_reward,
+                initial_best_weights=initial_weights,
+                initial_evaluation_count=1,
                 on_generation=on_generation,
                 should_stop=should_stop,
             )
@@ -261,7 +297,7 @@ def run_cmaes(
         best_weights=best_weights,
         initial_weights=initial_weights,
         history=history,
-        evaluation_count=len(history) * population_size,
+        evaluation_count=1 + len(history) * population_size,
         final_sigma=float(history[-1]["sigma"]),
         completed=completed,
         stop_reason=(

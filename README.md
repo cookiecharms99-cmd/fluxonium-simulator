@@ -1,5 +1,5 @@
 # Fluxonium Reset Optimization
-
+*(Last modified: 11-14-2026)*
 This project studies active reset of a fluxonium qubit coupled to a lossy microwave cavity. The immediate goal is to maximize the final population of the ground state \(|g,0\rangle\), currently targeting at least 0.999, while reducing the total reset time.
 
 The repository has completed its first physics audit and simulator refactor.
@@ -80,9 +80,8 @@ The optimization objective is the final ground-state population
 | `main/run_cmaes.py`                         | Command-line entry point for small or full-physics CMA-ES runs.                                   |
 | `tests/`                                    | Automated numerical and multiprocessing integration checks.                                       |
 | `config/`                                   | Physics, protocol, numerical, and optimizer configuration.                                        |
+| `config/device_calibrated.json`             | The one active calibrated-device and full-physics baseline; CLI flags declare each experiment.    |
 | `config/legacy_configs/baseline_reset.json` | Historical pre-refactor baseline description; not a runnable simulator config.                    |
-| `config/mini_audit.json`                    | Working configuration used by the refactored simulator and audits.                                |
-| `config/reference_prof.json`                | Fixed-charge, 40-flux-coefficient reference configuration modeled on the professor's protocol.    |
 | `References/Code/`                          | Professor-provided CMA-ES implementations and comparison code. Treat these as reference material. |
 | `References/Research-Texts/`                | Papers and background reading, including the reinforcement-learning thesis.                       |
 | `References/fluxonium-project-handoff.docx` | Detailed record of confirmed physics and the audit checkpoint.                                    |
@@ -113,48 +112,40 @@ uv run pytest
 
 ## Friendly commands
 
-Start with the compact workflow guide:
+The [Justfile](justfile) is the friendly project entry point. Start with its
+manual:
 
 ```bash
-uv run python main/flux.py commands
+just manual
 ```
 
-The friendly front door accepts unique fragments of verbose run names and
-creates readable timestamped output directories for new campaigns. For example:
+The direct recipes are useful when you already know the run directory:
 
 ```bash
-# List prior artifacts, then inspect or audit one by a short unique fragment.
-uv run python main/flux.py list-runs --match warm
-uv run python main/flux.py plot --run warm_start_4779342
-uv run python main/flux.py audit --run warm_start_4779342 --cutoffs 20 40
+# List saved run artifacts.
+just list-runs
 
+# Inspect, audit, or benchmark one exact saved run.
+just plot reference_6h_legacy_4776599 -- --population-cutoff 20
+just audit reference_6h_legacy_4776599 -- --cutoffs 20 40
+just benchmark reference_6h_legacy_4776599 -- --repetitions 3 --warmups 1
 
-
-# Preview a full-physics 140-ns warm-start command without launching it.
-uv run python main/flux.py run --protocol reference --init warm_start \
-  --warm-start data/output/cmaes/reference_6h_legacy_4776599/best_weights.npy \
-  --duration 140 --full-physics --dry-run
+# Pass normal runner arguments through the `run` recipe.
+just run -- --physics-config config/device_calibrated.json --full-physics \
+  --generations 5 --popsize 4 --workers 2
 ```
 
-Use `run`, `audit`, `plot`, or `benchmark` after `main/flux.py`; each forwards
-to the underlying trusted script and prints that exact command first.
-
-**Alternative: just & fzf**
-
-I also setup a justfile!
-
-Notable ones!
+The interactive helpers use `fzf` to select a run:
 
 ```bash
-just ez_plot (optional)--save (optional)--population-cutoff [n]
-just pull-cluster-data (well this is for me lol but anyone can write their own endpoint in the justfile locally! :))
+just ez_plot --population-cutoff 13
 just ez_cutoff_audit
-just latest_data
+just ez_benchmark_run
+just latest_data 10
 ```
 
-Or do `just` in general to see the full list!
-
-It requires: just, fzf, batcat, maybe more?
+`just` is required for this friendly layer. `fzf` is needed only for the
+interactive helpers; `batcat` merely improves the manual's display.
 
 ## Advanced commands
 
@@ -170,7 +161,7 @@ Run the fixed-charge, flux-only reference campaign with:
 
 ```bash
 uv run main/run_cmaes.py \
-  --physics-config config/reference_prof.json \
+  --physics-config config/device_calibrated.json \
   --initialization piecewise_lstsq \
   --generations 5 --popsize 4 --workers 2
 ```
@@ -187,7 +178,8 @@ Local runs are in scripts/ and HPC cluster ones are in jobs_to_send/
 - A cutoff of 13 is perfectly fine for a goal of 0.99, so for any runs seeking that, 13 suffices :), 8 is entirely unaccurate so it's just for checking consistency and functionality (not to be interpreted for anything physically haha!)
 - I was able to reach 0.99 fidelity for flux-only optimized circuit for T = 140ns.
 - Unverified: noticing common themes for good solutions towards the beginning interestingly enough
-
+- cutoff of 13 is fine for auditing but perhaps not for optimization: might need a dedicated test :3
+- charge cutoff optimization works fairly well! Joint optimizaiton... not so much :')
 See the analysis in `playzone/fluxonium_audit.py`. Run this from root
 
 ```bash
